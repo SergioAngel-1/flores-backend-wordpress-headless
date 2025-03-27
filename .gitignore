@@ -1,0 +1,14 @@
+/languages
+/uploads
+/webtoffee_iew_log
+/webtoffee_export
+/webtoffee_import
+
+/plugins/headless-mode
+/plugins/jwt-authentication-for-wp-rest-api
+/plugins/new-user-approve
+/plugins/product-import-export-for-woo
+/plugins/rest-api
+/plugins/woocommerce
+
+/themes/twentytwentyfive
