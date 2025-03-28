@@ -47,6 +47,10 @@ add_action('rest_api_init', function() {
     if (function_exists('register_legal_documents_rest_route')) {
         register_legal_documents_rest_route();
     }
+    
+    if (function_exists('floresinc_register_promotional_grid_rest_route')) {
+        floresinc_register_promotional_grid_rest_route();
+    }
 }, 20);
 
 // Cargar funciones en un orden específico para evitar dependencias rotas
@@ -58,6 +62,7 @@ $flores_core_files = array(
     'featured-categories-functions.php', // Funciones de categorías destacadas
     'hiperofertas-functions.php',   // Funciones de hiperofertas
     'legal-functions.php',          // Funciones para documentos legales
+    'promotional-grid-functions.php', // Funciones de la grilla publicitaria
 );
 
 // Cargar cada archivo
@@ -83,7 +88,8 @@ function flores_check_functionality() {
         'floresinc_register_banner_post_type',
         'register_featured_categories_page',
         'register_hiperofertas_post_type',
-        'register_legal_post_type'
+        'register_legal_post_type',
+        'floresinc_register_promotional_grid_rest_route'
     );
     
     $missing_functions = array();
