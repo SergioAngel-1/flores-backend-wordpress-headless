@@ -51,28 +51,34 @@ add_action('rest_api_init', function() {
     if (function_exists('floresinc_register_promotional_grid_rest_route')) {
         floresinc_register_promotional_grid_rest_route();
     }
+    
+    if (function_exists('floresinc_register_menu_rest_route')) {
+        floresinc_register_menu_rest_route();
+    }
 }, 20);
 
 // Cargar funciones en un orden específico para evitar dependencias rotas
-$flores_core_files = array(
-    'cors-functions.php',           // Primero CORS para asegurar que esté disponible para todas las solicitudes
-    'user-profile-functions.php',   // Funciones de perfil de usuario
-    'user-addresses-functions.php', // Funciones de direcciones de usuario
-    'banner-functions.php',         // Funciones de banners
-    'featured-categories-functions.php', // Funciones de categorías destacadas
-    'hiperofertas-functions.php',   // Funciones de hiperofertas
-    'legal-functions.php',          // Funciones para documentos legales
-    'promotional-grid-functions.php', // Funciones de la grilla publicitaria
+$required_files = array(
+    'cors-functions.php',
+    'woocommerce-functions.php',
+    'featured-categories-functions.php',
+    'banner-functions.php',
+    'hiperofertas-functions.php',
+    'user-addresses-functions.php',
+    'profile-functions.php',
+    'legal-functions.php',
+    'promotional-grid-functions.php',
+    'menu-functions.php'
 );
 
-// Cargar cada archivo
-foreach ($flores_core_files as $file) {
+// Verificar y cargar cada archivo solo si existe
+foreach ($required_files as $file) {
     $filepath = FLORES_INC_DIR . $file;
     if (file_exists($filepath)) {
         require_once $filepath;
     } else {
-        // Registrar un error si el archivo no existe
-        error_log("Error: No se pudo cargar el archivo {$file} en el tema FloresInc");
+        // Registrar un aviso si el archivo no existe, pero no interrumpir la ejecución
+        error_log("Aviso: No se pudo cargar el archivo {$file} en el tema FloresInc. El archivo no existe, pero la ejecución continúa.");
     }
 }
 
