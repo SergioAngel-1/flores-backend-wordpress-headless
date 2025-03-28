@@ -44,6 +44,10 @@ add_action('rest_api_init', function() {
         register_profile_endpoints();
     }
     
+    if (function_exists('register_user_profile_endpoints')) {
+        register_user_profile_endpoints();
+    }
+    
     if (function_exists('register_legal_documents_rest_route')) {
         register_legal_documents_rest_route();
     }
@@ -66,6 +70,7 @@ $required_files = array(
     'hiperofertas-functions.php',
     'user-addresses-functions.php',
     'profile-functions.php',
+    'user-profile-functions.php',
     'legal-functions.php',
     'promotional-grid-functions.php',
     'menu-functions.php'
