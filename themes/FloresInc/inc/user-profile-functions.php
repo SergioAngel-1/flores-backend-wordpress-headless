@@ -52,81 +52,83 @@ function update_user_profile_callback($request) {
     }
     
     // Actualizar los datos básicos del usuario
-    if (count($userdata) > 1) {
-        $update_result = wp_update_user($userdata);
-        
-        // Log para depuración
-        error_log('Resultado de wp_update_user: ' . (is_wp_error($update_result) ? $update_result->get_error_message() : 'ID: ' . $update_result));
-        
-        if (is_wp_error($update_result)) {
-            return new WP_Error('update_failed', $update_result->get_error_message(), array('status' => 400));
-        }
+    $user_id = wp_update_user($userdata);
+    
+    if (is_wp_error($user_id)) {
+        error_log('Error al actualizar usuario: ' . $user_id->get_error_message());
+        return new WP_Error('update_failed', $user_id->get_error_message(), array('status' => 500));
     }
     
-    // Verificar si el usuario es menor de edad
-    if (isset($params['active']) && $params['active'] === false) {
-        // Desactivar la cuenta del usuario
-        update_user_meta($user_id, 'account_active', false);
-        
-        // Opcional: Enviar notificación al administrador
-        $user_data = get_userdata($user_id);
-        $admin_email = get_option('admin_email');
-        $subject = 'Cuenta desactivada por usuario menor de edad';
-        $message = "El usuario {$user_data->user_login} (ID: {$user_id}) ha sido desactivado por ser menor de edad.";
-        wp_mail($admin_email, $subject, $message);
-        
-        $response['message'] = 'Cuenta desactivada por ser menor de edad';
-    } else {
-        // Actualizar cuenta como activa si se especifica
-        if (isset($params['active']) && $params['active'] === true) {
-            update_user_meta($user_id, 'account_active', true);
-        }
+    // Actualizar campos personalizados
+    if (isset($params['phone'])) {
+        update_user_meta($user_id, 'phone', sanitize_text_field($params['phone']));
     }
     
-    // Actualizar campos del perfil como meta datos
-    $profile_fields = array(
-        'phone', 'birthDate', 'gender', 'newsletter'
-    );
-    
-    foreach ($profile_fields as $field) {
-        if (isset($params[$field])) {
-            update_user_meta($user_id, $field, sanitize_text_field($params[$field]));
-        }
+    if (isset($params['birthDate'])) {
+        update_user_meta($user_id, 'birthDate', sanitize_text_field($params['birthDate']));
     }
     
-    // Obtener los datos actualizados del usuario para la respuesta
-    $user_data = get_userdata($user_id);
-    $response['user'] = array(
-        'id' => $user_id,
-        'email' => $user_data->user_email,
-        'firstName' => $user_data->first_name,
-        'lastName' => $user_data->last_name,
+    if (isset($params['gender'])) {
+        update_user_meta($user_id, 'gender', sanitize_text_field($params['gender']));
+    }
+    
+    if (isset($params['newsletter'])) {
+        update_user_meta($user_id, 'newsletter', (bool) $params['newsletter']);
+    }
+    
+    if (isset($params['active'])) {
+        update_user_meta($user_id, 'active', (bool) $params['active']);
+    }
+    
+    // Obtener los datos actualizados del usuario para devolverlos en la respuesta
+    $user = get_userdata($user_id);
+    
+    // Verificar que el email se haya actualizado correctamente
+    error_log('Email después de la actualización: ' . $user->user_email);
+    
+    // Preparar datos para la respuesta
+    $user_data = array(
+        'id' => $user->ID,
+        'firstName' => $user->first_name,
+        'lastName' => $user->last_name,
+        'email' => $user->user_email, // Usar user_email directamente
         'phone' => get_user_meta($user_id, 'phone', true),
         'birthDate' => get_user_meta($user_id, 'birthDate', true),
         'gender' => get_user_meta($user_id, 'gender', true),
         'newsletter' => (bool) get_user_meta($user_id, 'newsletter', true),
-        'active' => (bool) get_user_meta($user_id, 'account_active', true)
+        'active' => (bool) get_user_meta($user_id, 'active', true)
     );
     
-    $response['success'] = true;
-    return $response;
+    $response = array(
+        'success' => true,
+        'message' => 'Perfil actualizado correctamente',
+        'user' => $user_data
+    );
+    
+    return rest_ensure_response($response);
 }
 
 /**
- * Añadir campos de perfil a la respuesta del usuario
+ * Añadir campos de perfil personalizados a la respuesta de la API REST
  */
 function add_profile_fields_to_user_response($response, $user, $request) {
-    if (!empty($response->data)) {
+    if (!empty($user)) {
         $user_id = $user->ID;
+        
+        // Log para depuración
+        error_log('Preparando respuesta REST para usuario ID: ' . $user_id);
+        error_log('Email del usuario en la respuesta: ' . $user->user_email);
         
         // Añadir campos de perfil
         $response->data['firstName'] = get_user_meta($user_id, 'firstName', true) ?: $user->first_name;
         $response->data['lastName'] = get_user_meta($user_id, 'lastName', true) ?: $user->last_name;
+        // Asegurarse de que el email siempre esté presente en la respuesta
+        $response->data['email'] = $user->user_email;
         $response->data['phone'] = get_user_meta($user_id, 'phone', true);
         $response->data['birthDate'] = get_user_meta($user_id, 'birthDate', true);
         $response->data['gender'] = get_user_meta($user_id, 'gender', true);
         $response->data['newsletter'] = (bool) get_user_meta($user_id, 'newsletter', true);
-        $response->data['active'] = (bool) get_user_meta($user_id, 'account_active', true);
+        $response->data['active'] = (bool) get_user_meta($user_id, 'active', true);
     }
     
     return $response;
