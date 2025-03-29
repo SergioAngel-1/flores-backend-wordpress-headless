@@ -12,11 +12,18 @@
  */
 require_once __DIR__ . '/inc/init.php';
 
+// Incluir el archivo de gestión de roles
+require_once __DIR__ . '/inc/role-manager-functions.php';
+
+// Incluir el archivo de configuración del Gestor de la tienda
+require_once __DIR__ . '/inc/shop-manager-settings.php';
+
 /**
  * Registro de usuarios - Endpoint personalizado
  * Añade un endpoint para el registro de nuevos usuarios con estado pendiente
  */
 function custom_user_register_endpoint() {
+    // Endpoint original (mantener por compatibilidad)
     register_rest_route('wp/v2', '/users/register', array(
         'methods' => 'POST',
         'callback' => 'custom_register_user',
@@ -24,8 +31,17 @@ function custom_user_register_endpoint() {
             return true; // Permitir acceso público
         }
     ));
+    
+    // Nuevo endpoint para el frontend React
+    register_rest_route('floresinc/v1', '/register', array(
+        'methods' => 'POST',
+        'callback' => 'custom_register_user',
+        'permission_callback' => function() {
+            return true; // Permitir acceso público
+        }
+    ));
 }
-add_action('rest_api_init', 'custom_user_register_endpoint');
+add_action('rest_api_init', 'custom_user_register_endpoint', 20);
 
 /**
  * Función para registrar un nuevo usuario con validación
@@ -34,58 +50,74 @@ function custom_register_user($request) {
     $username = sanitize_user($request['username']);
     $email = sanitize_email($request['email']);
     $password = $request['password'];
-    $phone = sanitize_text_field($request['phone'] ?? '');
-    
-    // Validación de datos
-    if (empty($username)) {
-        return new WP_Error('invalid_username', 'El nombre de usuario es obligatorio', array('status' => 400));
+    $name = isset($request['name']) ? sanitize_text_field($request['name']) : $username;
+    $phone = isset($request['phone']) ? sanitize_text_field($request['phone']) : '';
+    $referral_code = isset($request['referralCode']) ? sanitize_text_field($request['referralCode']) : '';
+
+    // Validar campos
+    if (empty($username) || empty($email) || empty($password)) {
+        return new WP_Error('missing_fields', 'Todos los campos son obligatorios', array('status' => 400));
     }
-    
-    if (empty($email) || !is_email($email)) {
-        return new WP_Error('invalid_email', 'El correo electrónico es inválido', array('status' => 400));
+
+    // Validar email
+    if (!is_email($email)) {
+        return new WP_Error('invalid_email', 'El email no es válido', array('status' => 400));
     }
-    
-    if (empty($password)) {
-        return new WP_Error('invalid_password', 'La contraseña es obligatoria', array('status' => 400));
+
+    // Verificar si el usuario ya existe
+    if (username_exists($username) || email_exists($email)) {
+        return new WP_Error('user_exists', 'El usuario o email ya está registrado', array('status' => 400));
     }
-    
-    // Verificar si el usuario o email ya existen
-    if (username_exists($username)) {
-        return new WP_Error('username_exists', 'Este nombre de usuario ya está en uso', array('status' => 400));
+
+    // Si hay código de referido, guardarlo en cookie para que el sistema de referidos lo procese
+    if (!empty($referral_code)) {
+        setcookie('floresinc_referral', $referral_code, time() + (86400 * 30), '/');
+        error_log("Código de referido recibido durante registro: $referral_code");
+        
+        // También lo guardamos en $_POST para que esté disponible inmediatamente
+        $_POST['referralCode'] = $referral_code;
     }
-    
-    if (email_exists($email)) {
-        return new WP_Error('email_exists', 'Este correo electrónico ya está registrado', array('status' => 400));
-    }
-    
-    // Crear el usuario pendiente de aprobación
-    $user_id = wp_insert_user(array(
+
+    // Crear el usuario con estado pendiente
+    $user_data = array(
         'user_login' => $username,
-        'user_pass' => $password,
         'user_email' => $email,
-        'role' => 'customer',
-        'user_status' => 0 // Pendiente de aprobación
-    ));
-    
+        'user_pass' => $password,
+        'display_name' => $name,
+        'first_name' => $name,  // Añadir nombre como first_name
+        'nickname' => $name,    // Añadir nombre como nickname
+        'role' => 'subscriber'
+    );
+
+    $user_id = wp_insert_user($user_data);
+
     if (is_wp_error($user_id)) {
-        return new WP_Error('registration_failed', $user_id->get_error_message(), array('status' => 500));
+        return $user_id;
     }
+
+    // Guardar el estado pendiente y otros datos
+    update_user_meta($user_id, 'pending_approval', true);
     
-    // Guardar el teléfono como metadato del usuario
+    // Guardar el teléfono si está disponible
     if (!empty($phone)) {
         update_user_meta($user_id, 'phone', $phone);
     }
     
-    // Marcar como pendiente de aprobación
-    update_user_meta($user_id, 'pending_approval', true);
+    // Forzar la generación del código de referido y procesamiento de la relación
+    if (function_exists('floresinc_rp_generate_referral_code')) {
+        floresinc_rp_generate_referral_code($user_id);
+    }
     
+    if (function_exists('floresinc_rp_process_referral_relationship')) {
+        floresinc_rp_process_referral_relationship($user_id);
+    }
+
     // Enviar notificación al administrador
     send_admin_notification_new_user($user_id, $username, $email);
-    
-    // Devolver respuesta exitosa
+
     return array(
-        'success' => true,
-        'message' => 'Usuario registrado con éxito. Pendiente de aprobación por un administrador.',
+        'status' => 'success',
+        'message' => 'Usuario registrado correctamente. Un administrador revisará tu cuenta pronto.',
         'user_id' => $user_id
     );
 }
@@ -123,14 +155,60 @@ function custom_prepare_user_response($response, $user, $request) {
 add_filter('rest_prepare_user', 'custom_prepare_user_response', 10, 3);
 
 /**
+ * Añadir columna de estado en la lista de usuarios del admin
+ */
+function add_pending_status_column($columns) {
+    $columns['pending_status'] = 'Estado';
+    return $columns;
+}
+add_filter('manage_users_columns', 'add_pending_status_column');
+
+/**
+ * Mostrar el estado del usuario en la columna
+ */
+function show_pending_status_column_content($value, $column_name, $user_id) {
+    if ($column_name === 'pending_status') {
+        $pending = get_user_meta($user_id, 'pending_approval', true);
+        
+        if ($pending && current_user_can('edit_users')) {
+            $approve_link = admin_url("users.php?action=approve&user_id={$user_id}");
+            $approve_nonce = wp_create_nonce("approve-user_{$user_id}");
+            
+            return '<span style="color:red; display:block; margin-bottom:5px;">Pendiente</span>' .
+                   '<a href="' . $approve_link . '&_wpnonce=' . $approve_nonce . '" ' .
+                   'class="button button-primary" style="display:inline-block;">Aprobar</a>';
+        } else if ($pending) {
+            return '<span style="color:red;">Pendiente</span>';
+        } else {
+            return '<span style="color:green;">Aprobado</span>';
+        }
+    }
+    
+    return $value;
+}
+add_filter('manage_users_custom_column', 'show_pending_status_column_content', 10, 3);
+
+/**
  * Añadir un botón de aprobación en la administración de usuarios
  */
 function add_approve_user_button($actions, $user_object) {
-    if (current_user_can('edit_users') && get_user_meta($user_object->ID, 'pending_approval', true)) {
+    // Verificar si el usuario tiene el meta pending_approval
+    $pending = get_user_meta($user_object->ID, 'pending_approval', true);
+    $role = $user_object->roles[0] ?? 'no-role';
+    
+    // Registrar información para depuración
+    error_log("Usuario ID: {$user_object->ID}, Rol: {$role}, Pending: " . ($pending ? 'true' : 'false'));
+    
+    // Mostrar el botón de aprobación si el usuario está pendiente
+    if (current_user_can('edit_users') && $pending) {
         $approve_link = admin_url("users.php?action=approve&user_id={$user_object->ID}");
         $approve_nonce = wp_create_nonce("approve-user_{$user_object->ID}");
-        $actions['approve'] = "<a href='{$approve_link}&_wpnonce={$approve_nonce}' class='approve'>Aprobar</a>";
+        $actions['approve'] = "<a href='{$approve_link}&_wpnonce={$approve_nonce}' class='button button-primary' style='color: white; font-weight: bold; margin-right: 5px;'>Aprobar</a>";
+        
+        // Registrar que se añadió el botón
+        error_log("Botón de aprobación añadido para usuario ID: {$user_object->ID}");
     }
+    
     return $actions;
 }
 add_filter('user_row_actions', 'add_approve_user_button', 10, 2);
@@ -160,20 +238,24 @@ function process_user_approval() {
         // Marcar como aprobado
         delete_user_meta($user_id, 'pending_approval');
         
+        // Cambiar rol de usuario a customer
+        $user = new WP_User($user_id);
+        $user->set_role('customer');
+        
         // Notificar al usuario
-        $user = get_userdata($user_id);
-        if ($user) {
+        $user_data = get_userdata($user_id);
+        if ($user_data) {
             $site_name = get_bloginfo('name');
             $login_url = wp_login_url();
             
             $subject = "[$site_name] Tu cuenta ha sido aprobada";
-            $message = "Hola {$user->display_name},\n\n";
+            $message = "Hola {$user_data->display_name},\n\n";
             $message .= "Tu cuenta en $site_name ha sido aprobada por un administrador.\n";
             $message .= "Ya puedes iniciar sesión en: $login_url\n\n";
             $message .= "Saludos,\n";
             $message .= "El equipo de $site_name";
             
-            wp_mail($user->user_email, $subject, $message);
+            wp_mail($user_data->user_email, $subject, $message);
         }
         
         // Mensaje de éxito
@@ -187,28 +269,6 @@ function process_user_approval() {
     exit;
 }
 add_action('admin_init', 'process_user_approval');
-
-/**
- * Añadir columna de estado en la lista de usuarios del admin
- */
-function add_pending_status_column($columns) {
-    $columns['pending_status'] = 'Estado';
-    return $columns;
-}
-add_filter('manage_users_columns', 'add_pending_status_column');
-
-/**
- * Mostrar el estado del usuario en la columna
- */
-function show_pending_status_column_content($value, $column_name, $user_id) {
-    if ($column_name === 'pending_status') {
-        return get_user_meta($user_id, 'pending_approval', true) 
-            ? '<span style="color:red;">Pendiente</span>' 
-            : '<span style="color:green;">Aprobado</span>';
-    }
-    return $value;
-}
-add_filter('manage_users_custom_column', 'show_pending_status_column_content', 10, 3);
 
 /**
  * Bloquear el acceso a la administración para usuarios pendientes de aprobación
