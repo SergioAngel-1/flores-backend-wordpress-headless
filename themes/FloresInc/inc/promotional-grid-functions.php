@@ -100,40 +100,67 @@ function floresinc_promotional_grid_status_callback($post) {
     
     // Obtener el estado actual
     $is_active = get_post_meta($post->ID, '_promotional_grid_active', true);
-    $is_active = !empty($is_active) ? true : false;
+    $is_active = !empty($is_active) ? 1 : 0;
     
-    // Obtener la grilla activa actual
-    $active_grid_id = get_option('floresinc_active_promotional_grid', 0);
-    $is_current_active = ($active_grid_id == $post->ID);
+    // Obtener la categoría asociada (si existe)
+    $associated_category = get_post_meta($post->ID, '_promotional_grid_category', true);
+    
+    // Obtener todas las categorías de producto
+    $product_categories = get_terms(array(
+        'taxonomy' => 'product_cat',
+        'hide_empty' => false,
+    ));
     
     ?>
     <div class="promotional-grid-status">
         <p>
             <label>
-                <input type="checkbox" name="promotional_grid_active" value="1" <?php checked($is_active, true); ?>>
-                <?php _e('Activar esta grilla', 'floresinc'); ?>
+                <input type="checkbox" name="promotional_grid_active" value="1" <?php checked($is_active, 1); ?>>
+                <?php _e('Grilla activa', 'floresinc'); ?>
             </label>
         </p>
         
-        <?php if ($is_current_active) : ?>
-            <div class="active-grid-notice" style="background-color: #e7f7e3; border-left: 4px solid #46b450; padding: 8px 12px; margin-top: 10px;">
-                <p style="margin: 0;">
-                    <strong><?php _e('Esta grilla está actualmente activa', 'floresinc'); ?></strong>
-                </p>
-            </div>
-        <?php else : ?>
-            <?php if ($active_grid_id > 0 && $is_active) : ?>
-                <div class="notice-warning" style="background-color: #fff8e5; border-left: 4px solid #ffb900; padding: 8px 12px; margin-top: 10px;">
-                    <p style="margin: 0;">
-                        <?php _e('Al activar esta grilla, se desactivará la grilla actualmente activa.', 'floresinc'); ?>
-                    </p>
-                </div>
-            <?php endif; ?>
-        <?php endif; ?>
+        <p>
+            <label for="promotional_grid_category">
+                <?php _e('Asociar a categoría:', 'floresinc'); ?>
+            </label>
+            <select name="promotional_grid_category" id="promotional_grid_category">
+                <option value=""><?php _e('-- Grilla por defecto --', 'floresinc'); ?></option>
+                <?php foreach ($product_categories as $category) : ?>
+                    <option value="<?php echo $category->term_id; ?>" <?php selected($associated_category, $category->term_id); ?>>
+                        <?php echo $category->name; ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </p>
         
         <p class="description">
-            <?php _e('Solo una grilla puede estar activa a la vez. Al activar esta grilla, se desactivará cualquier otra grilla activa.', 'floresinc'); ?>
+            <?php _e('Si asocias esta grilla a una categoría, se mostrará en las páginas de esa categoría. Si no seleccionas ninguna categoría, se considerará como la grilla por defecto.', 'floresinc'); ?>
         </p>
+        
+        <?php if ($is_active) : ?>
+            <p class="grid-status active">
+                <span class="dashicons dashicons-yes-alt"></span>
+                <?php 
+                if (!empty($associated_category)) {
+                    $cat_name = '';
+                    $term = get_term($associated_category, 'product_cat');
+                    if (!is_wp_error($term) && $term) {
+                        $cat_name = $term->name;
+                    }
+                    _e('Esta grilla está activa para la categoría: ', 'floresinc');
+                    echo '<strong>' . esc_html($cat_name) . '</strong>';
+                } else {
+                    _e('Esta grilla está activa como grilla por defecto', 'floresinc');
+                }
+                ?>
+            </p>
+        <?php else : ?>
+            <p class="grid-status inactive">
+                <span class="dashicons dashicons-no-alt"></span>
+                <?php _e('Esta grilla está inactiva', 'floresinc'); ?>
+            </p>
+        <?php endif; ?>
     </div>
     <?php
 }
@@ -239,34 +266,76 @@ function floresinc_save_promotional_grid_meta($post_id) {
         $is_active = isset($_POST['promotional_grid_active']) ? 1 : 0;
         update_post_meta($post_id, '_promotional_grid_active', $is_active);
         
-        // Si está activa, actualizar la opción global y desactivar las demás
+        // Guardar categoría asociada
+        $category_id = isset($_POST['promotional_grid_category']) ? sanitize_text_field($_POST['promotional_grid_category']) : '';
+        update_post_meta($post_id, '_promotional_grid_category', $category_id);
+        
+        // Si está activa, actualizar las opciones según el tipo de grilla
         if ($is_active) {
-            update_option('floresinc_active_promotional_grid', $post_id);
-            
-            // Desactivar otras grillas
-            $args = array(
-                'post_type'      => 'promotional_grid',
-                'posts_per_page' => -1,
-                'post__not_in'   => array($post_id),
-                'meta_query'     => array(
-                    array(
-                        'key'     => '_promotional_grid_active',
-                        'value'   => '1',
-                        'compare' => '=',
+            if (empty($category_id)) {
+                // Es una grilla por defecto
+                update_option('floresinc_active_default_grid', $post_id);
+                
+                // Desactivar otras grillas por defecto
+                $args = array(
+                    'post_type'      => 'promotional_grid',
+                    'posts_per_page' => -1,
+                    'post__not_in'   => array($post_id),
+                    'meta_query'     => array(
+                        'relation' => 'AND',
+                        array(
+                            'key'     => '_promotional_grid_active',
+                            'value'   => '1',
+                            'compare' => '=',
+                        ),
+                        array(
+                            'key'     => '_promotional_grid_category',
+                            'value'   => '',
+                            'compare' => '=',
+                        ),
                     ),
-                ),
-            );
-            
-            $other_active_grids = get_posts($args);
-            
-            foreach ($other_active_grids as $grid) {
-                update_post_meta($grid->ID, '_promotional_grid_active', 0);
+                );
+                
+                $other_active_default_grids = get_posts($args);
+                
+                foreach ($other_active_default_grids as $grid) {
+                    update_post_meta($grid->ID, '_promotional_grid_active', 0);
+                }
+            } else {
+                // Es una grilla de categoría
+                // Desactivar otras grillas para la misma categoría
+                $args = array(
+                    'post_type'      => 'promotional_grid',
+                    'posts_per_page' => -1,
+                    'post__not_in'   => array($post_id),
+                    'meta_query'     => array(
+                        'relation' => 'AND',
+                        array(
+                            'key'     => '_promotional_grid_active',
+                            'value'   => '1',
+                            'compare' => '=',
+                        ),
+                        array(
+                            'key'     => '_promotional_grid_category',
+                            'value'   => $category_id,
+                            'compare' => '=',
+                        ),
+                    ),
+                );
+                
+                $other_active_category_grids = get_posts($args);
+                
+                foreach ($other_active_category_grids as $grid) {
+                    update_post_meta($grid->ID, '_promotional_grid_active', 0);
+                }
             }
         } else {
-            // Si se está desactivando la grilla activa, limpiar la opción global
-            $active_grid_id = get_option('floresinc_active_promotional_grid', 0);
-            if ($active_grid_id == $post_id) {
-                update_option('floresinc_active_promotional_grid', 0);
+            // Si se está desactivando la grilla activa por defecto, limpiar la opción
+            if (empty($category_id)) {
+                $active_default_grid_id = get_option('floresinc_active_default_grid', 0);
+                if ($active_default_grid_id == $post_id) {
+                    update_option('floresinc_active_default_grid', 0);
+                }
             }
         }
     }
@@ -274,66 +343,189 @@ function floresinc_save_promotional_grid_meta($post_id) {
 add_action('save_post_promotional_grid', 'floresinc_save_promotional_grid_meta');
 
 /**
- * Obtener los productos de la grilla publicitaria
+ * Callback para el endpoint de la API REST por categoría
  */
-function floresinc_get_promotional_grid_products($grid_id = null) {
-    // Si no se proporciona un ID, obtener la grilla activa
-    if (empty($grid_id)) {
-        $grid_id = get_option('floresinc_active_promotional_grid', 0);
+function floresinc_get_promotional_grid_by_category_rest($request) {
+    $category_id = $request['id'];
+    
+    // Validar que la categoría exista
+    $term = get_term($category_id, 'product_cat');
+    if (is_wp_error($term) || !$term) {
+        error_log("Categoría no encontrada: $category_id");
+        return new WP_REST_Response(array(), 200);
+    }
+    
+    error_log("Procesando solicitud de grilla para categoría: " . $term->name . " (ID: $category_id)");
+    
+    // Buscar directamente grillas para esta categoría específica
+    $args = array(
+        'post_type'      => 'promotional_grid',
+        'posts_per_page' => 1,
+        'meta_query'     => array(
+            'relation' => 'AND',
+            array(
+                'key'     => '_promotional_grid_active',
+                'value'   => '1',
+                'compare' => '=',
+            ),
+            array(
+                'key'     => '_promotional_grid_category',
+                'value'   => $category_id,
+                'compare' => '=',
+            ),
+        ),
+    );
+    
+    $category_grids = get_posts($args);
+    
+    // Si encontramos una grilla específica para esta categoría
+    if (!empty($category_grids)) {
+        $grid_id = $category_grids[0]->ID;
+        error_log("Encontrada grilla específica para categoría $category_id: Grid ID $grid_id");
         
-        // Si no hay grilla activa, buscar la primera grilla con estado activo
-        if (empty($grid_id)) {
+        // Obtener productos de esta grilla
+        $products = floresinc_get_products_from_grid($grid_id);
+        error_log("Productos encontrados en grilla específica: " . count($products));
+        
+        return new WP_REST_Response($products, 200);
+    }
+    
+    // Si no hay grilla específica, buscar en categorías ancestras
+    $ancestors = get_ancestors($category_id, 'product_cat', 'taxonomy');
+    if (!empty($ancestors)) {
+        error_log("Buscando en categorías ancestras: " . implode(', ', $ancestors));
+        
+        foreach ($ancestors as $ancestor_id) {
             $args = array(
                 'post_type'      => 'promotional_grid',
                 'posts_per_page' => 1,
-                'meta_key'       => '_promotional_grid_active',
-                'meta_value'     => '1',
+                'meta_query'     => array(
+                    'relation' => 'AND',
+                    array(
+                        'key'     => '_promotional_grid_active',
+                        'value'   => '1',
+                        'compare' => '=',
+                    ),
+                    array(
+                        'key'     => '_promotional_grid_category',
+                        'value'   => $ancestor_id,
+                        'compare' => '=',
+                    ),
+                ),
             );
             
-            $active_grids = get_posts($args);
+            $ancestor_grids = get_posts($args);
             
-            if (!empty($active_grids)) {
-                $grid_id = $active_grids[0]->ID;
-                // Actualizar la opción global
-                update_option('floresinc_active_promotional_grid', $grid_id);
-            } else {
-                // Si no hay grillas activas, usar la más reciente
-                $args = array(
-                    'post_type'      => 'promotional_grid',
-                    'posts_per_page' => 1,
-                    'orderby'        => 'date',
-                    'order'          => 'DESC',
-                );
+            if (!empty($ancestor_grids)) {
+                $grid_id = $ancestor_grids[0]->ID;
+                $ancestor_term = get_term($ancestor_id, 'product_cat');
+                $ancestor_name = !is_wp_error($ancestor_term) && $ancestor_term ? $ancestor_term->name : 'desconocida';
                 
-                $grids = get_posts($args);
+                error_log("Encontrada grilla para categoría ancestral '$ancestor_name' (ID: $ancestor_id): Grid ID $grid_id");
                 
-                if (empty($grids)) {
-                    return array();
-                }
+                // Obtener productos de esta grilla
+                $products = floresinc_get_products_from_grid($grid_id);
+                error_log("Productos encontrados en grilla ancestral: " . count($products));
                 
-                $grid_id = $grids[0]->ID;
+                return new WP_REST_Response($products, 200);
             }
         }
+    }
+    
+    // Si llegamos aquí, no se encontró ninguna grilla específica ni ancestral
+    // En este caso, vamos a devolver los productos de la grilla por defecto para garantizar contenido
+    $default_products = floresinc_get_default_promotional_grid_products();
+    
+    if (!empty($default_products)) {
+        error_log("No se encontró grilla específica para categoría $category_id - Usando grilla por defecto como fallback");
+        return new WP_REST_Response($default_products, 200);
+    } else {
+        error_log("No se encontró ninguna grilla específica o por defecto para categoría $category_id");
+        return new WP_REST_Response(array(), 200);
+    }
+}
+
+/**
+ * Callback para el endpoint de la API REST por defecto
+ */
+function floresinc_get_promotional_grid_rest() {
+    // Obtener la grilla por defecto
+    $grid_id = get_option('floresinc_active_default_grid', 0);
+    
+    if (empty($grid_id)) {
+        // Buscar la primera grilla por defecto activa
+        $args = array(
+            'post_type'      => 'promotional_grid',
+            'posts_per_page' => 1,
+            'meta_query'     => array(
+                'relation' => 'AND',
+                array(
+                    'key'     => '_promotional_grid_active',
+                    'value'   => '1',
+                    'compare' => '=',
+                ),
+                array(
+                    'key'     => '_promotional_grid_category',
+                    'value'   => '',
+                    'compare' => '=',
+                ),
+            ),
+        );
+        
+        $default_grids = get_posts($args);
+        
+        if (!empty($default_grids)) {
+            $grid_id = $default_grids[0]->ID;
+            // Actualizar la opción global
+            update_option('floresinc_active_default_grid', $grid_id);
+        }
+    }
+    
+    if (empty($grid_id)) {
+        error_log("No se encontró ninguna grilla por defecto activa");
+        return new WP_REST_Response(array(), 200);
+    }
+    
+    error_log("Usando grilla por defecto: ID $grid_id");
+    
+    // Obtener productos de la grilla por defecto
+    $products = floresinc_get_products_from_grid($grid_id);
+    error_log("Productos encontrados en grilla por defecto: " . count($products));
+    
+    return new WP_REST_Response($products, 200);
+}
+
+/**
+ * Función auxiliar para obtener productos de una grilla
+ */
+function floresinc_get_products_from_grid($grid_id) {
+    if (empty($grid_id)) {
+        error_log("floresinc_get_products_from_grid: grid_id está vacío");
+        return array();
     }
     
     // Obtener los IDs de productos
     $product_ids = get_post_meta($grid_id, '_promotional_grid_products', true);
     
-    if (empty($product_ids)) {
+    error_log("Grid ID: $grid_id - Productos raw: " . print_r($product_ids, true));
+    
+    if (empty($product_ids) || !is_array($product_ids)) {
+        error_log("No se encontraron productos para la grid ID: $grid_id o no es un array válido");
         return array();
     }
     
-    // Obtener datos de productos
     $products = array();
     
     foreach ($product_ids as $product_id) {
         if (empty($product_id)) {
+            error_log("ID de producto vacío encontrado en grid $grid_id");
             continue;
         }
         
         $product = wc_get_product($product_id);
         
         if (!$product) {
+            error_log("Producto no encontrado para ID: $product_id");
             continue;
         }
         
@@ -353,14 +545,82 @@ function floresinc_get_promotional_grid_products($grid_id = null) {
         
         $products[] = array(
             'id'            => $product_id,
-            'title'         => $product->get_name(),
-            'image'         => wp_get_attachment_url($product->get_image_id()),
-            'url'           => get_permalink($product_id),
+            'name'          => $product->get_name(),
             'price'         => $formatted_price,
+            'raw_price'     => $price, // Añadir precio sin formato para cálculos en el frontend
             'regular_price' => $formatted_regular_price,
-            'has_sale'      => $has_sale
+            'raw_regular_price' => $regular_price,
+            'sale_price'    => $has_sale ? 'COP ' . number_format($sale_price, 0, ',', '.') : '',
+            'raw_sale_price' => $sale_price,
+            'images'        => array(
+                array(
+                    'src' => wp_get_attachment_url($product->get_image_id())
+                )
+            ),
+            'permalink'     => get_permalink($product_id),
+            'categories'    => array_map(function($term) {
+                return array(
+                    'id'   => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug
+                );
+            }, wp_get_post_terms($product_id, 'product_cat'))
         );
+        
+        error_log("Añadido producto a resultados: " . $product->get_name() . " (ID: $product_id)");
     }
+    
+    error_log("Total de productos procesados para grid $grid_id: " . count($products));
+    
+    return $products;
+}
+
+/**
+ * Función auxiliar para obtener los productos de la grilla por defecto
+ */
+function floresinc_get_default_promotional_grid_products() {
+    // Obtener la grilla por defecto
+    $grid_id = get_option('floresinc_active_default_grid', 0);
+    
+    if (empty($grid_id)) {
+        // Buscar la primera grilla por defecto activa
+        $args = array(
+            'post_type'      => 'promotional_grid',
+            'posts_per_page' => 1,
+            'meta_query'     => array(
+                'relation' => 'AND',
+                array(
+                    'key'     => '_promotional_grid_active',
+                    'value'   => '1',
+                    'compare' => '=',
+                ),
+                array(
+                    'key'     => '_promotional_grid_category',
+                    'value'   => '',
+                    'compare' => '=',
+                ),
+            ),
+        );
+        
+        $default_grids = get_posts($args);
+        
+        if (!empty($default_grids)) {
+            $grid_id = $default_grids[0]->ID;
+            // Actualizar la opción global
+            update_option('floresinc_active_default_grid', $grid_id);
+        }
+    }
+    
+    if (empty($grid_id)) {
+        error_log("No se encontró ninguna grilla por defecto activa");
+        return array();
+    }
+    
+    error_log("Obteniedo productos de la grilla por defecto: ID $grid_id");
+    
+    // Obtener productos de la grilla por defecto
+    $products = floresinc_get_products_from_grid($grid_id);
+    error_log("Productos encontrados en la grilla por defecto: " . count($products));
     
     return $products;
 }
@@ -374,16 +634,20 @@ function floresinc_register_promotional_grid_rest_route() {
         'callback' => 'floresinc_get_promotional_grid_rest',
         'permission_callback' => '__return_true',
     ));
-}
-add_action('rest_api_init', 'floresinc_register_promotional_grid_rest_route');
-
-/**
- * Callback para el endpoint de la API REST
- */
-function floresinc_get_promotional_grid_rest() {
-    $products = floresinc_get_promotional_grid_products();
     
-    return new WP_REST_Response($products, 200);
+    // Endpoint para obtener la grilla por categoría
+    register_rest_route('floresinc/v1', '/promotional-grid/category/(?P<id>\d+)', array(
+        'methods'  => 'GET',
+        'callback' => 'floresinc_get_promotional_grid_by_category_rest',
+        'permission_callback' => '__return_true',
+        'args' => array(
+            'id' => array(
+                'validate_callback' => function($param) {
+                    return is_numeric($param);
+                }
+            ),
+        ),
+    ));
 }
 
 /**
@@ -395,8 +659,10 @@ function floresinc_add_promotional_grid_columns($columns) {
     foreach ($columns as $key => $value) {
         $new_columns[$key] = $value;
         
+        // Añadir columna después del título
         if ($key === 'title') {
             $new_columns['status'] = __('Estado', 'floresinc');
+            $new_columns['category'] = __('Categoría', 'floresinc');
         }
     }
     
@@ -405,23 +671,39 @@ function floresinc_add_promotional_grid_columns($columns) {
 add_filter('manage_promotional_grid_posts_columns', 'floresinc_add_promotional_grid_columns');
 
 /**
- * Mostrar el contenido de la columna de estado
+ * Mostrar contenido de las columnas personalizadas
  */
-function floresinc_show_promotional_grid_column_content($column, $post_id) {
-    if ($column === 'status') {
-        $is_active = get_post_meta($post_id, '_promotional_grid_active', true);
-        $active_grid_id = get_option('floresinc_active_promotional_grid', 0);
-        
-        if ($active_grid_id == $post_id) {
-            echo '<span class="active-status" style="color: #46b450; font-weight: bold;">' . __('Activa', 'floresinc') . '</span>';
-        } elseif ($is_active) {
-            echo '<span class="pending-status" style="color: #ffb900;">' . __('Activada (pendiente)', 'floresinc') . '</span>';
-        } else {
-            echo '<span class="inactive-status" style="color: #dc3232;">' . __('Inactiva', 'floresinc') . '</span>';
-        }
+function floresinc_show_promotional_grid_columns($column, $post_id) {
+    switch ($column) {
+        case 'status':
+            $is_active = get_post_meta($post_id, '_promotional_grid_active', true);
+            
+            if ($is_active) {
+                echo '<span class="dashicons dashicons-yes-alt" style="color: green;"></span> ';
+                echo __('Activa', 'floresinc');
+            } else {
+                echo '<span class="dashicons dashicons-no-alt" style="color: red;"></span> ';
+                echo __('Inactiva', 'floresinc');
+            }
+            break;
+            
+        case 'category':
+            $category_id = get_post_meta($post_id, '_promotional_grid_category', true);
+            
+            if (!empty($category_id)) {
+                $term = get_term($category_id, 'product_cat');
+                if (!is_wp_error($term) && $term) {
+                    echo esc_html($term->name);
+                } else {
+                    echo __('Categoría no encontrada', 'floresinc');
+                }
+            } else {
+                echo '<strong>' . __('Grilla por defecto', 'floresinc') . '</strong>';
+            }
+            break;
     }
 }
-add_action('manage_promotional_grid_posts_custom_column', 'floresinc_show_promotional_grid_column_content', 10, 2);
+add_action('manage_promotional_grid_posts_custom_column', 'floresinc_show_promotional_grid_columns', 10, 2);
 
 /**
  * Añadir acciones rápidas para activar/desactivar grillas
@@ -429,7 +711,7 @@ add_action('manage_promotional_grid_posts_custom_column', 'floresinc_show_promot
 function floresinc_add_promotional_grid_row_actions($actions, $post) {
     if ($post->post_type === 'promotional_grid') {
         $is_active = get_post_meta($post->ID, '_promotional_grid_active', true);
-        $active_grid_id = get_option('floresinc_active_promotional_grid', 0);
+        $active_grid_id = get_option('floresinc_active_default_grid', 0);
         
         if ($active_grid_id != $post->ID) {
             $actions['activate'] = sprintf(
@@ -470,7 +752,7 @@ function floresinc_handle_activate_promotional_grid() {
     
     // Activar esta grilla
     update_post_meta($grid_id, '_promotional_grid_active', 1);
-    update_option('floresinc_active_promotional_grid', $grid_id);
+    update_option('floresinc_active_default_grid', $grid_id);
     
     // Desactivar otras grillas
     $args = array(
@@ -520,9 +802,9 @@ function floresinc_handle_deactivate_promotional_grid() {
     update_post_meta($grid_id, '_promotional_grid_active', 0);
     
     // Actualizar la opción global
-    $active_grid_id = get_option('floresinc_active_promotional_grid', 0);
+    $active_grid_id = get_option('floresinc_active_default_grid', 0);
     if ($active_grid_id == $grid_id) {
-        update_option('floresinc_active_promotional_grid', 0);
+        update_option('floresinc_active_default_grid', 0);
     }
     
     // Redirigir de vuelta a la lista

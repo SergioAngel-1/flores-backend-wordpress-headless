@@ -18,6 +18,9 @@ require_once __DIR__ . '/inc/role-manager-functions.php';
 // Incluir el archivo de configuración del Gestor de la tienda
 require_once __DIR__ . '/inc/shop-manager-settings.php';
 
+// Incluir el archivo de optimización de API
+require_once __DIR__ . '/inc/api-optimization.php';
+
 /**
  * Registro de usuarios - Endpoint personalizado
  * Añade un endpoint para el registro de nuevos usuarios con estado pendiente
