@@ -21,6 +21,9 @@ require_once __DIR__ . '/inc/shop-manager-settings.php';
 // Incluir el archivo de optimización de API
 require_once __DIR__ . '/inc/api-optimization.php';
 
+// Incluir el archivo de funciones de catálogos
+require_once __DIR__ . '/inc/catalog-functions.php';
+
 /**
  * Registro de usuarios - Endpoint personalizado
  * Añade un endpoint para el registro de nuevos usuarios con estado pendiente
