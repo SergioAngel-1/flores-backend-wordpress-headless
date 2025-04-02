@@ -53,6 +53,15 @@ function floresinc_register_catalog_endpoints() {
         }
     ]);
     
+    // Endpoint para obtener productos completos de un catálogo
+    register_rest_route($namespace, '/catalogs/(?P<id>\d+)/complete-products', [
+        'methods' => 'GET',
+        'callback' => 'floresinc_get_catalog_complete_products_endpoint',
+        'permission_callback' => function() {
+            return is_user_logged_in();
+        }
+    ]);
+    
     // Endpoint para actualizar un producto específico del catálogo
     register_rest_route($namespace, '/catalogs/(?P<catalog_id>\d+)/products/(?P<product_id>\d+)', [
         'methods' => 'PUT',
@@ -152,6 +161,7 @@ function floresinc_create_catalog_tables() {
         id bigint(20) NOT NULL AUTO_INCREMENT,
         catalog_id bigint(20) NOT NULL,
         product_id bigint(20) NOT NULL,
+        product_price decimal(10,6) NULL,
         catalog_price decimal(10,6) NULL,
         catalog_name varchar(255) NULL,
         catalog_description text NULL,
@@ -159,6 +169,7 @@ function floresinc_create_catalog_tables() {
         catalog_sku varchar(100) NULL,
         catalog_image varchar(255) NULL,
         catalog_images text NULL,
+        is_custom tinyint(1) NOT NULL DEFAULT 0,
         created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY  (id),
@@ -171,43 +182,60 @@ function floresinc_create_catalog_tables() {
     dbDelta($catalog_products_sql);
     
     // Verificar si la columna catalog_price existe, y si no, añadirla
-    floresinc_check_catalog_table_columns();
+    floresinc_check_and_update_tables();
 }
 // Registrar la función para la activación del tema
 add_action('after_switch_theme', 'floresinc_create_catalog_tables');
 
 /**
- * Verificar y añadir las columnas necesarias si no existen
+ * Verificar y actualizar la estructura de las tablas
  */
-function floresinc_check_catalog_table_columns() {
+function floresinc_check_and_update_tables() {
     global $wpdb;
     
-    $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
-    
-    // Verificar si la tabla existe
-    if ($wpdb->get_var("SHOW TABLES LIKE '$catalog_products_table'") !== $catalog_products_table) {
-        return;
-    }
-    
-    // Lista de columnas a verificar y añadir si no existen
-    $columns = [
-        'catalog_price' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_price` decimal(10,6) NULL AFTER `product_id`",
-        'catalog_name' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_name` varchar(255) NULL AFTER `catalog_price`",
-        'catalog_description' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_description` text NULL AFTER `catalog_name`",
-        'catalog_short_description' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_short_description` text NULL AFTER `catalog_description`",
-        'catalog_sku' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_sku` varchar(100) NULL AFTER `catalog_short_description`",
-        'catalog_image' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_image` varchar(255) NULL AFTER `catalog_sku`",
-        'catalog_images' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_images` text NULL AFTER `catalog_image`",
-        'updated_at' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`"
-    ];
-    
-    foreach ($columns as $column_name => $sql) {
-        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM `$catalog_products_table` LIKE '$column_name'");
+    try {
+        $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
+        $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
         
-        if (empty($column_exists)) {
-            $wpdb->query($sql);
-            error_log("Columna $column_name añadida a la tabla $catalog_products_table");
+        // Lista de columnas a verificar y añadir si no existen
+        $columns = [
+            'catalog_price' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_price` decimal(10,6) NULL AFTER `product_id`",
+            'product_price' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `product_price` decimal(10,6) NULL AFTER `catalog_price`",
+            'catalog_name' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_name` varchar(255) NULL AFTER `product_price`",
+            'catalog_description' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_description` text NULL AFTER `catalog_name`",
+            'catalog_short_description' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_short_description` text NULL AFTER `catalog_description`",
+            'catalog_sku' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_sku` varchar(100) NULL AFTER `catalog_short_description`",
+            'catalog_image' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_image` varchar(255) NULL AFTER `catalog_sku`",
+            'catalog_images' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_images` text NULL AFTER `catalog_image`",
+            'is_custom' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `is_custom` tinyint(1) NOT NULL DEFAULT 0 AFTER `catalog_images`",
+            'updated_at' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`"
+        ];
+        
+        // Verificar si las columnas existen y añadirlas si no
+        foreach ($columns as $column => $alter_sql) {
+            $column_exists = $wpdb->get_var("SHOW COLUMNS FROM `$catalog_products_table` LIKE '$column'");
+            
+            if (!$column_exists) {
+                error_log("La columna '$column' no existe en la tabla $catalog_products_table. Añadiéndola...");
+                $wpdb->query($alter_sql);
+                
+                // Verificar si la columna se añadió correctamente
+                $column_added = $wpdb->get_var("SHOW COLUMNS FROM `$catalog_products_table` LIKE '$column'");
+                if ($column_added) {
+                    error_log("Columna '$column' añadida correctamente.");
+                } else {
+                    error_log("Error al añadir la columna '$column'. SQL: $alter_sql");
+                    error_log("Error de MySQL: " . $wpdb->last_error);
+                }
+            } else {
+                error_log("La columna '$column' ya existe en la tabla $catalog_products_table.");
+            }
         }
+        
+        return true;
+    } catch (Exception $e) {
+        error_log("Error al verificar y actualizar las tablas: " . $e->getMessage());
+        return false;
     }
 }
 
@@ -303,7 +331,7 @@ function floresinc_get_catalog_products_endpoint(WP_REST_Request $request) {
     
     // Obtener los IDs de productos y precios de catálogo
     $product_data = $wpdb->get_results($wpdb->prepare("
-        SELECT product_id, catalog_price, catalog_name, catalog_description, catalog_short_description, catalog_sku, catalog_image, catalog_images
+        SELECT id, product_id, product_price, catalog_price, catalog_name, catalog_description, catalog_short_description, catalog_sku, catalog_image, catalog_images, is_custom
         FROM $catalog_products_table
         WHERE catalog_id = %d
     ", $catalog_id), ARRAY_A);
@@ -316,6 +344,7 @@ function floresinc_get_catalog_products_endpoint(WP_REST_Request $request) {
     
     foreach ($product_data as $item) {
         $product_id = $item['product_id'];
+        $product_price = $item['product_price'];
         $catalog_price = $item['catalog_price'];
         $catalog_name = $item['catalog_name'];
         $catalog_description = $item['catalog_description'];
@@ -323,6 +352,7 @@ function floresinc_get_catalog_products_endpoint(WP_REST_Request $request) {
         $catalog_sku = $item['catalog_sku'];
         $catalog_image = $item['catalog_image'];
         $catalog_images = $item['catalog_images'];
+        $is_custom = $item['is_custom'];
         
         // Si es un producto personalizado (product_id = 0), crear un producto personalizado
         if ($product_id == 0) {
@@ -341,7 +371,7 @@ function floresinc_get_catalog_products_endpoint(WP_REST_Request $request) {
                 'images' => $catalog_images ? json_decode($catalog_images, true) : [],
                 'description' => $catalog_description ?: '',
                 'short_description' => $catalog_short_description ?: '',
-                'is_custom' => true
+                'is_custom' => (bool)$is_custom
             ];
             
             $products[] = $product_data;
@@ -365,7 +395,9 @@ function floresinc_get_catalog_products_endpoint(WP_REST_Request $request) {
                 'image' => $catalog_image ?: '', // Agregar propiedad 'image'
                 'images' => $catalog_images ? json_decode($catalog_images, true) : [],
                 'description' => $catalog_description ?: $product->get_description(),
-                'short_description' => $catalog_short_description ?: $product->get_short_description()
+                'short_description' => $catalog_short_description ?: $product->get_short_description(),
+                'is_custom' => $is_custom,
+                'product_price' => $product_price
             ];
             
             // Obtener imágenes
@@ -406,88 +438,274 @@ function floresinc_get_catalog_products_endpoint(WP_REST_Request $request) {
 }
 
 /**
+ * Endpoint: Obtener productos completos de un catálogo
+ */
+function floresinc_get_catalog_complete_products_endpoint(WP_REST_Request $request) {
+    global $wpdb;
+    $catalog_id = $request['id'];
+    
+    // Verificar que el catálogo existe
+    $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
+    $catalog = $wpdb->get_row(
+        $wpdb->prepare("SELECT * FROM $catalog_table WHERE id = %d", $catalog_id)
+    );
+    
+    if (!$catalog) {
+        return new WP_Error('catalog_not_found', 'Catálogo no encontrado', array('status' => 404));
+    }
+    
+    // Obtener los productos del catálogo con toda la información necesaria
+    $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
+    $products = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT * FROM $catalog_products_table WHERE catalog_id = %d",
+            $catalog_id
+        )
+    );
+    
+    // Transformar los datos para que sean compatibles con el formato esperado en el frontend
+    $formatted_products = array_map(function($product) {
+        $images = !empty($product->catalog_images) ? json_decode($product->catalog_images, true) : [];
+        $image_urls = [];
+        
+        if (!empty($images)) {
+            $image_urls = array_map(function($img_id) {
+                // Asegurar que devolvemos URLs completas y absolutas
+                $url = wp_get_attachment_url($img_id);
+                
+                // Verificar si la URL es relativa y convertirla a absoluta
+                if ($url && strpos($url, 'http') !== 0) {
+                    $url = site_url($url);
+                }
+                
+                return $url;
+            }, $images);
+        }
+        
+        // Si hay catalog_image, asegurar que es una URL absoluta
+        $catalog_image = $product->catalog_image;
+        if (!empty($catalog_image) && strpos($catalog_image, 'http') !== 0) {
+            $catalog_image = site_url($catalog_image);
+        }
+        
+        return [
+            'id' => (int) $product->id,
+            'product_id' => (int) $product->product_id,
+            'name' => $product->catalog_name ?: 'Producto sin nombre',
+            'price' => $product->catalog_price ? (string) $product->catalog_price : '0',
+            'product_price' => $product->product_price ? (string) $product->product_price : '0',
+            'description' => $product->catalog_description ?: '',
+            'short_description' => $product->catalog_short_description ?: '',
+            'sku' => $product->catalog_sku ?: '',
+            'images' => array_map(function($url) {
+                return ['src' => $url];
+            }, $image_urls),
+            'catalog_price' => $product->catalog_price ? (float) $product->catalog_price : null,
+            'catalog_name' => $product->catalog_name,
+            'catalog_description' => $product->catalog_description,
+            'catalog_short_description' => $product->catalog_short_description,
+            'catalog_sku' => $product->catalog_sku,
+            'catalog_image' => !empty($image_urls) ? $image_urls[0] : $catalog_image,
+            'catalog_images' => $image_urls,
+            'is_custom' => (bool) $product->is_custom
+        ];
+    }, $products);
+    
+    return rest_ensure_response($formatted_products);
+}
+
+/**
  * Endpoint: Actualizar un producto específico del catálogo
  */
 function floresinc_update_catalog_product_endpoint(WP_REST_Request $request) {
     global $wpdb;
-    $catalog_id = $request['catalog_id'];
-    $product_id = $request['product_id'];
+    $catalog_id = $request->get_param('catalog_id');
+    $product_id = $request->get_param('product_id');
     
-    // Obtener y validar los datos
-    $params = $request->get_json_params();
+    // Registrar los datos recibidos para depuración
+    error_log('Actualización de producto solicitada - Catálogo: ' . $catalog_id . ', Producto: ' . $product_id);
+    error_log('Parámetros de actualización: ' . json_encode($request->get_json_params()));
     
-    if (!isset($params['catalog_price']) && !isset($params['catalog_name']) && !isset($params['catalog_description']) && !isset($params['catalog_short_description']) && !isset($params['catalog_sku']) && !isset($params['catalog_image'])) {
-        return new WP_Error('missing_data', 'Debes proporcionar al menos un campo para actualizar', ['status' => 400]);
+    if (!$catalog_id || !$product_id) {
+        return new WP_Error('missing_params', 'Los IDs del catálogo y producto son obligatorios', ['status' => 400]);
     }
     
-    $catalog_price = isset($params['catalog_price']) ? floatval($params['catalog_price']) : null;
-    $catalog_name = isset($params['catalog_name']) ? sanitize_text_field($params['catalog_name']) : null;
-    $catalog_description = isset($params['catalog_description']) ? sanitize_text_field($params['catalog_description']) : null;
-    $catalog_short_description = isset($params['catalog_short_description']) ? sanitize_text_field($params['catalog_short_description']) : null;
-    $catalog_sku = isset($params['catalog_sku']) ? sanitize_text_field($params['catalog_sku']) : null;
-    $catalog_image = isset($params['catalog_image']) ? sanitize_text_field($params['catalog_image']) : null;
+    $params = $request->get_json_params();
+    
+    // Verificar que el catálogo existe
+    $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
+    $catalog = $wpdb->get_row($wpdb->prepare("SELECT * FROM $catalog_table WHERE id = %d", $catalog_id));
+    
+    if (!$catalog) {
+        error_log('Error: Catálogo no encontrado - ID: ' . $catalog_id);
+        return new WP_Error('catalog_not_found', 'Catálogo no encontrado', ['status' => 404]);
+    }
     
     $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
     
     // Verificar que el producto existe en el catálogo
-    $product_exists = $wpdb->get_row($wpdb->prepare("
+    $catalog_product = $wpdb->get_row($wpdb->prepare("
         SELECT * FROM $catalog_products_table 
         WHERE catalog_id = %d AND product_id = %d
     ", $catalog_id, $product_id));
     
-    if (!$product_exists) {
-        return new WP_Error('product_not_found', 'El producto no existe en el catálogo', ['status' => 404]);
+    if (!$catalog_product) {
+        error_log('Error: Producto no encontrado en el catálogo - Catálogo: ' . $catalog_id . ', Producto: ' . $product_id);
+        
+        // Intentar buscar por ID de la relación (posiblemente un producto personalizado)
+        $catalog_product = $wpdb->get_row($wpdb->prepare("
+            SELECT * FROM $catalog_products_table 
+            WHERE catalog_id = %d AND id = %d
+        ", $catalog_id, $product_id));
+        
+        if (!$catalog_product) {
+            error_log('Error: Producto tampoco encontrado por ID de relación');
+            return new WP_Error('product_not_found', 'Producto no encontrado en el catálogo', ['status' => 404]);
+        }
+        
+        error_log('Producto encontrado por ID de relación: ' . json_encode($catalog_product));
     }
     
-    // Actualizar el producto
+    // Preparar datos para actualización
     $update_data = [];
     $update_format = [];
     
-    if ($catalog_price !== null) {
-        $update_data['catalog_price'] = $catalog_price;
+    if (isset($params['catalog_price'])) {
+        // Validar que el precio sea un número o null
+        if ($params['catalog_price'] === null) {
+            $update_data['catalog_price'] = null;
+            $update_format[] = '%s'; // Usar %s para NULL
+        } else {
+            $price = floatval($params['catalog_price']);
+            $update_data['catalog_price'] = $price;
+            $update_format[] = '%f';
+        }
+    }
+    
+    if (isset($params['catalog_name'])) {
+        $update_data['catalog_name'] = sanitize_text_field($params['catalog_name']);
+        $update_format[] = '%s';
+    }
+    
+    if (isset($params['catalog_description'])) {
+        $update_data['catalog_description'] = $params['catalog_description']; // No usar sanitize_text_field para HTML
+        $update_format[] = '%s';
+    }
+    
+    if (isset($params['catalog_short_description'])) {
+        $update_data['catalog_short_description'] = $params['catalog_short_description']; // No usar sanitize_text_field para HTML
+        $update_format[] = '%s';
+    }
+    
+    if (isset($params['catalog_sku'])) {
+        $update_data['catalog_sku'] = sanitize_text_field($params['catalog_sku']);
+        $update_format[] = '%s';
+    }
+    
+    if (isset($params['catalog_image'])) {
+        $update_data['catalog_image'] = esc_url_raw($params['catalog_image']);
+        $update_format[] = '%s';
+    }
+    
+    if (isset($params['catalog_images']) && is_array($params['catalog_images'])) {
+        // Asegurarse de que todas las URLs sean válidas
+        $images = array_map('esc_url_raw', $params['catalog_images']);
+        $update_data['catalog_images'] = json_encode($images);
+        $update_format[] = '%s';
+    }
+    
+    if (isset($params['product_price'])) {
+        $update_data['product_price'] = floatval($params['product_price']);
         $update_format[] = '%f';
     }
     
-    if ($catalog_name !== null) {
-        $update_data['catalog_name'] = $catalog_name;
-        $update_format[] = '%s';
+    if (isset($params['is_custom'])) {
+        $update_data['is_custom'] = $params['is_custom'] ? 1 : 0;
+        $update_format[] = '%d';
     }
     
-    if ($catalog_description !== null) {
-        $update_data['catalog_description'] = $catalog_description;
-        $update_format[] = '%s';
+    if (empty($update_data)) {
+        error_log('Error: No se proporcionaron datos para actualizar');
+        return new WP_Error('no_data', 'No se proporcionaron datos para actualizar', ['status' => 400]);
     }
     
-    if ($catalog_short_description !== null) {
-        $update_data['catalog_short_description'] = $catalog_short_description;
-        $update_format[] = '%s';
-    }
+    // Registrar los datos que se actualizarán
+    error_log('Datos a actualizar: ' . json_encode($update_data));
     
-    if ($catalog_sku !== null) {
-        $update_data['catalog_sku'] = $catalog_sku;
-        $update_format[] = '%s';
-    }
-    
-    if ($catalog_image !== null) {
-        $update_data['catalog_image'] = $catalog_image;
-        $update_format[] = '%s';
-    }
-    
-    $wpdb->update(
+    // Actualizar el producto en el catálogo
+    $result = $wpdb->update(
         $catalog_products_table,
         $update_data,
-        ['catalog_id' => $catalog_id, 'product_id' => $product_id],
+        [
+            'id' => $catalog_product->id
+        ],
         $update_format,
-        ['%d', '%d']
+        ['%d']
+    );
+    
+    if ($result === false) {
+        error_log('Error al actualizar el producto: ' . $wpdb->last_error);
+        return new WP_Error('update_failed', 'Error al actualizar el producto en el catálogo: ' . $wpdb->last_error, ['status' => 500]);
+    }
+    
+    // Actualizar la fecha de modificación del catálogo
+    $wpdb->update(
+        $catalog_table, 
+        ['updated_at' => current_time('mysql')], 
+        ['id' => $catalog_id],
+        ['%s'],
+        ['%d']
     );
     
     // Obtener el producto actualizado
     $updated_product = $wpdb->get_row($wpdb->prepare("
         SELECT * FROM $catalog_products_table 
-        WHERE catalog_id = %d AND product_id = %d
-    ", $catalog_id, $product_id), ARRAY_A);
+        WHERE id = %d
+    ", $catalog_product->id));
     
-    return new WP_REST_Response($updated_product, 200);
+    // Formatear la respuesta para que coincida con el formato esperado en el frontend
+    $images = !empty($updated_product->catalog_images) ? json_decode($updated_product->catalog_images, true) : [];
+    $image_urls = [];
+    
+    if (!empty($images)) {
+        $image_urls = array_map(function($img_id) {
+            // Asegurar que devolvemos URLs completas y absolutas
+            $url = wp_get_attachment_url($img_id);
+            
+            // Verificar si la URL es relativa y convertirla a absoluta
+            if ($url && strpos($url, 'http') !== 0) {
+                $url = site_url($url);
+            }
+            
+            return $url;
+        }, $images);
+    }
+    
+    // Si es una URL directa en catalog_image, asegurar que es absoluta
+    $catalog_image = $updated_product->catalog_image;
+    if (!empty($catalog_image) && strpos($catalog_image, 'http') !== 0) {
+        $catalog_image = site_url($catalog_image);
+    }
+    
+    $response_data = [
+        'id' => (int) $updated_product->id,
+        'product_id' => (int) $updated_product->product_id,
+        'catalog_id' => (int) $updated_product->catalog_id,
+        'catalog_price' => $updated_product->catalog_price !== null ? (float) $updated_product->catalog_price : null,
+        'catalog_name' => $updated_product->catalog_name,
+        'catalog_description' => $updated_product->catalog_description,
+        'catalog_short_description' => $updated_product->catalog_short_description,
+        'catalog_sku' => $updated_product->catalog_sku,
+        'catalog_image' => !empty($image_urls) ? $image_urls[0] : $catalog_image,
+        'catalog_images' => $image_urls,
+        'is_custom' => (bool) $updated_product->is_custom,
+        'product_price' => $updated_product->product_price !== null ? (float) $updated_product->product_price : null,
+        'updated_at' => $updated_product->updated_at
+    ];
+    
+    error_log('Producto actualizado exitosamente: ' . json_encode($response_data));
+    
+    return new WP_REST_Response($response_data, 200);
 }
 
 /**
@@ -539,7 +757,7 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
         }
         
         // Verificar y añadir las columnas necesarias
-        floresinc_check_catalog_table_columns();
+        floresinc_check_and_update_tables();
         
         // Verificar si la tabla de asociaciones existe
         $associations_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$associations_table'") === $associations_table;
@@ -635,14 +853,21 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
                     'catalog_description' => $catalog_description,
                     'catalog_short_description' => $catalog_short_description,
                     'catalog_sku' => $catalog_sku,
-                    'catalog_image' => $catalog_image
+                    'catalog_image' => $catalog_image,
+                    'is_custom' => isset($product_data['is_custom']) ? 1 : 0 // Añadir el campo is_custom
                 ];
                 
-                $insert_format = ['%d', '%d', '%s', '%s', '%s', '%s', '%s'];
+                $insert_format = ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d'];
                 
                 // Añadir precio de catálogo si está definido
                 if ($catalog_price !== null) {
                     $insert_data['catalog_price'] = $catalog_price;
+                    $insert_format[] = '%f';
+                }
+                
+                // Añadir precio de producto si está definido
+                if (isset($product_data['product_price'])) {
+                    $insert_data['product_price'] = floatval($product_data['product_price']);
                     $insert_format[] = '%f';
                 }
                 
@@ -721,6 +946,12 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
                 ];
                 
                 $insert_format = ['%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s'];
+                
+                // Añadir precio de producto si está definido
+                if (isset($custom_data['product_price'])) {
+                    $insert_data['product_price'] = floatval($custom_data['product_price']);
+                    $insert_format[] = '%f';
+                }
                 
                 $wpdb->insert(
                     $catalog_products_table,
@@ -806,151 +1037,248 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
  */
 function floresinc_update_catalog_endpoint(WP_REST_Request $request) {
     global $wpdb;
+    $catalog_id = $request->get_param('id');
     $user_id = get_current_user_id();
-    $catalog_id = $request['id'];
-    
-    // Obtener y validar los datos
-    $params = $request->get_json_params();
-    
-    if (!isset($params['name']) || empty($params['name'])) {
-        return new WP_Error('missing_name', 'El nombre del catálogo es obligatorio', ['status' => 400]);
-    }
-    
-    $name = sanitize_text_field($params['name']);
-    $products = isset($params['products']) && is_array($params['products']) ? $params['products'] : [];
-    
-    $catalogs_table = $wpdb->prefix . 'floresinc_catalogs';
-    $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
-    $associations_table = $wpdb->prefix . 'floresinc_catalog_product_associations';
     
     // Verificar que el catálogo existe y pertenece al usuario
-    $catalog = $wpdb->get_row($wpdb->prepare("
-        SELECT * FROM $catalogs_table 
-        WHERE id = %d AND user_id = %d
-    ", $catalog_id, $user_id));
+    $catalogs_table = $wpdb->prefix . 'floresinc_catalogs';
+    $catalog = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $catalogs_table WHERE id = %d AND user_id = %d",
+        $catalog_id, $user_id
+    ));
     
     if (!$catalog) {
-        return new WP_Error('catalog_not_found', 'Catálogo no encontrado', ['status' => 404]);
+        return new WP_Error('catalog_not_found', 'Catálogo no encontrado o no tienes permiso para editarlo', ['status' => 404]);
     }
     
-    // Actualizar el nombre del catálogo
-    $wpdb->update(
-        $catalogs_table,
-        ['name' => $name],
-        ['id' => $catalog_id],
-        ['%s'],
-        ['%d']
-    );
+    $params = $request->get_json_params();
+    $name = isset($params['name']) ? sanitize_text_field($params['name']) : null;
+    $products = isset($params['products']) ? $params['products'] : null;
     
-    // Eliminar todos los productos actuales del catálogo
-    $wpdb->delete(
-        $catalog_products_table,
-        ['catalog_id' => $catalog_id],
-        ['%d']
-    );
-    
-    // Eliminar todas las asociaciones actuales del catálogo
-    if ($wpdb->get_var("SHOW TABLES LIKE '$associations_table'") === $associations_table) {
-        $wpdb->delete(
-            $associations_table,
-            ['catalog_id' => $catalog_id],
+    // Actualizar nombre si se proporcionó
+    if ($name) {
+        $wpdb->update(
+            $catalogs_table,
+            ['name' => $name],
+            ['id' => $catalog_id],
+            ['%s'],
             ['%d']
         );
     }
     
-    // Insertar los nuevos productos
-    foreach ($products as $product_data) {
-        // Si es un objeto con id y catalog_price
-        if (is_array($product_data) && isset($product_data['id'])) {
-            $product_id = intval($product_data['id']);
-            $catalog_price = isset($product_data['catalog_price']) ? floatval($product_data['catalog_price']) : null;
-            $catalog_name = isset($product_data['catalog_name']) ? sanitize_text_field($product_data['catalog_name']) : null;
-            $catalog_description = isset($product_data['catalog_description']) ? sanitize_text_field($product_data['catalog_description']) : null;
-            $catalog_short_description = isset($product_data['catalog_short_description']) ? sanitize_text_field($product_data['catalog_short_description']) : null;
-            $catalog_sku = isset($product_data['catalog_sku']) ? sanitize_text_field($product_data['catalog_sku']) : null;
-            $catalog_image = isset($product_data['catalog_image']) ? sanitize_text_field($product_data['catalog_image']) : null;
-        } else {
-            // Si es solo el ID del producto
-            $product_id = intval($product_data);
-            $catalog_price = null;
-            $catalog_name = null;
-            $catalog_description = null;
-            $catalog_short_description = null;
-            $catalog_sku = null;
-            $catalog_image = null;
+    // Actualizar productos si se proporcionaron
+    if (is_array($products)) {
+        $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
+        
+        // Obtener los productos actuales del catálogo para verificar cuáles eliminar
+        $current_products = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, product_id, is_custom FROM $catalog_products_table WHERE catalog_id = %d",
+            $catalog_id
+        ), ARRAY_A);
+        
+        // Mapear los IDs actuales para facilitar la búsqueda
+        $current_product_ids = [];
+        $current_custom_product_ids = [];
+        
+        foreach ($current_products as $product) {
+            if ($product['is_custom']) {
+                $current_custom_product_ids[] = $product['id'];
+            } else {
+                $current_product_ids[] = $product['product_id'];
+            }
         }
         
-        // Verificar que el producto existe
-        $product = wc_get_product($product_id);
-        if ($product) {
-            $insert_data = [
+        // Mapear los nuevos IDs para facilitar la comparación
+        $new_product_ids = [];
+        $new_custom_product_ids = [];
+        
+        foreach ($products as $product) {
+            if (isset($product['is_custom']) && $product['is_custom']) {
+                if (isset($product['id'])) {
+                    $new_custom_product_ids[] = $product['id'];
+                }
+            } else {
+                if (isset($product['product_id'])) {
+                    $new_product_ids[] = $product['product_id'];
+                }
+            }
+        }
+        
+        // Eliminar asociaciones de productos que ya no están en el catálogo
+        // EXCEPTO productos personalizados (is_custom = 1)
+        $products_to_delete = array_diff($current_product_ids, $new_product_ids);
+        
+        if (!empty($products_to_delete)) {
+            foreach ($products_to_delete as $product_id) {
+                $wpdb->delete(
+                    $catalog_products_table,
+                    [
+                        'catalog_id' => $catalog_id,
+                        'product_id' => $product_id,
+                        'is_custom' => 0 // Solo eliminar productos no personalizados
+                    ],
+                    [
+                        '%d',
+                        '%d',
+                        '%d'
+                    ]
+                );
+            }
+        }
+        
+        // Eliminar productos personalizados que ya no están en el catálogo
+        $custom_products_to_delete = array_diff($current_custom_product_ids, $new_custom_product_ids);
+        
+        if (!empty($custom_products_to_delete)) {
+            foreach ($custom_products_to_delete as $product_id) {
+                $wpdb->delete(
+                    $catalog_products_table,
+                    [
+                        'catalog_id' => $catalog_id,
+                        'id' => $product_id,
+                        'is_custom' => 1 // Solo eliminar productos personalizados
+                    ],
+                    [
+                        '%d',
+                        '%d',
+                        '%d'
+                    ]
+                );
+            }
+        }
+        
+        // Añadir o actualizar productos
+        foreach ($products as $product) {
+            $product_id = isset($product['product_id']) ? intval($product['product_id']) : 0;
+            $catalog_product_id = isset($product['id']) ? intval($product['id']) : 0;
+            $is_custom = isset($product['is_custom']) && $product['is_custom'] ? 1 : 0;
+            
+            // Preparar datos para insertar/actualizar
+            $catalog_price = isset($product['catalog_price']) ? floatval($product['catalog_price']) : null;
+            $catalog_name = isset($product['catalog_name']) ? sanitize_text_field($product['catalog_name']) : null;
+            $catalog_description = isset($product['catalog_description']) ? sanitize_text_field($product['catalog_description']) : null;
+            $catalog_short_description = isset($product['catalog_short_description']) ? sanitize_text_field($product['catalog_short_description']) : null;
+            $catalog_sku = isset($product['catalog_sku']) ? sanitize_text_field($product['catalog_sku']) : null;
+            $catalog_image = isset($product['catalog_image']) ? sanitize_text_field($product['catalog_image']) : null;
+            $catalog_images = isset($product['catalog_images']) ? json_encode($product['catalog_images']) : null;
+            $product_price = isset($product['product_price']) ? floatval($product['product_price']) : null;
+            
+            // Si no se proporcionaron datos de catálogo pero es un producto de WooCommerce, obtener los datos del producto
+            if (!$is_custom && $product_id > 0 && (!$catalog_name || !$catalog_description)) {
+                $wc_product = wc_get_product($product_id);
+                if ($wc_product) {
+                    if (!$catalog_name) {
+                        $catalog_name = $wc_product->get_name();
+                    }
+                    if (!$catalog_description) {
+                        $catalog_description = $wc_product->get_description();
+                    }
+                    if (!$catalog_short_description) {
+                        $catalog_short_description = $wc_product->get_short_description();
+                    }
+                    if (!$catalog_sku) {
+                        $catalog_sku = $wc_product->get_sku();
+                    }
+                    if (!$catalog_image) {
+                        $image_id = $wc_product->get_image_id();
+                        if ($image_id) {
+                            $catalog_image = wp_get_attachment_url($image_id);
+                        }
+                    }
+                    if (!$catalog_images) {
+                        $gallery_image_ids = $wc_product->get_gallery_image_ids();
+                        $images = [];
+                        if ($image_id) {
+                            $images[] = wp_get_attachment_url($image_id);
+                        }
+                        foreach ($gallery_image_ids as $gallery_image_id) {
+                            $images[] = wp_get_attachment_url($gallery_image_id);
+                        }
+                        $catalog_images = json_encode($images);
+                    }
+                }
+            }
+            
+            // Verificar si el producto ya existe en el catálogo
+            $existing_product = null;
+            
+            if ($is_custom && $catalog_product_id > 0) {
+                // Para productos personalizados, buscar por ID de la tabla
+                $existing_product = $wpdb->get_row($wpdb->prepare(
+                    "SELECT * FROM $catalog_products_table WHERE id = %d AND catalog_id = %d AND is_custom = 1",
+                    $catalog_product_id, $catalog_id
+                ));
+            } else if (!$is_custom && $product_id > 0) {
+                // Para productos normales, buscar por product_id
+                $existing_product = $wpdb->get_row($wpdb->prepare(
+                    "SELECT * FROM $catalog_products_table WHERE product_id = %d AND catalog_id = %d",
+                    $product_id, $catalog_id
+                ));
+            }
+            
+            // Datos a insertar/actualizar
+            $data = [
                 'catalog_id' => $catalog_id,
                 'product_id' => $product_id,
+                'catalog_price' => $catalog_price,
                 'catalog_name' => $catalog_name,
                 'catalog_description' => $catalog_description,
                 'catalog_short_description' => $catalog_short_description,
                 'catalog_sku' => $catalog_sku,
-                'catalog_image' => $catalog_image
+                'catalog_image' => $catalog_image,
+                'catalog_images' => $catalog_images,
+                'product_price' => $product_price,
+                'is_custom' => $is_custom
             ];
             
-            $insert_format = ['%d', '%d', '%s', '%s', '%s', '%s', '%s'];
+            $format = [
+                '%d', // catalog_id
+                '%d', // product_id
+                $catalog_price !== null ? '%f' : null, // catalog_price
+                $catalog_name !== null ? '%s' : null, // catalog_name
+                $catalog_description !== null ? '%s' : null, // catalog_description
+                $catalog_short_description !== null ? '%s' : null, // catalog_short_description
+                $catalog_sku !== null ? '%s' : null, // catalog_sku
+                $catalog_image !== null ? '%s' : null, // catalog_image
+                $catalog_images !== null ? '%s' : null, // catalog_images
+                $product_price !== null ? '%f' : null, // product_price
+                '%d' // is_custom
+            ];
             
-            // Añadir precio de catálogo si está definido
-            if ($catalog_price !== null) {
-                $insert_data['catalog_price'] = $catalog_price;
-                $insert_format[] = '%f';
-            }
+            // Eliminar valores nulos
+            $data = array_filter($data, function($value) {
+                return $value !== null;
+            });
             
-            $wpdb->insert(
-                $catalog_products_table,
-                $insert_data,
-                $insert_format
-            );
+            $format = array_filter($format, function($value) {
+                return $value !== null;
+            });
             
-            if ($wpdb->insert_id) {
-                // Verificar si es necesario actualizar las asociaciones en la tabla floresinc_catalog_product_associations
-                if ($wpdb->get_var("SHOW TABLES LIKE '$associations_table'") === $associations_table) {
-                    // Comprobar si ya existe la asociación
-                    $existing = $wpdb->get_row($wpdb->prepare(
-                        "SELECT * FROM $associations_table WHERE catalog_id = %d AND catalog_product_id = %d",
-                        $catalog_id,
-                        $wpdb->insert_id
-                    ));
-                    
-                    if (!$existing) {
-                        // Crear la asociación
-                        $wpdb->insert(
-                            $associations_table,
-                            [
-                                'catalog_id' => $catalog_id,
-                                'catalog_product_id' => $wpdb->insert_id
-                            ],
-                            ['%d', '%d']
-                        );
-                        
-                        if ($wpdb->last_error) {
-                            error_log('Error al insertar asociación de producto personalizado: ' . $wpdb->last_error);
-                        } else {
-                            error_log('Asociación creada correctamente para el producto ID: ' . $wpdb->insert_id . ' con el catálogo ID: ' . $catalog_id);
-                        }
-                    }
-                } else {
-                    error_log('No se pudo crear la asociación porque la tabla no existe');
-                }
+            if ($existing_product) {
+                // Actualizar producto existente
+                $wpdb->update(
+                    $catalog_products_table,
+                    $data,
+                    ['id' => $existing_product->id],
+                    $format,
+                    ['%d']
+                );
+            } else {
+                // Insertar nuevo producto
+                $wpdb->insert(
+                    $catalog_products_table,
+                    $data,
+                    $format
+                );
             }
         }
     }
     
-    // Obtener el catálogo actualizado con el conteo de productos
-    $updated_catalog = $wpdb->get_row($wpdb->prepare("
-        SELECT c.*, (
-            SELECT COUNT(*) 
-            FROM $catalog_products_table cp 
-            WHERE cp.catalog_id = c.id
-        ) as product_count
-        FROM $catalogs_table c
-        WHERE c.id = %d
-    ", $catalog_id), ARRAY_A);
+    // Obtener el catálogo actualizado
+    $updated_catalog = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $catalogs_table WHERE id = %d",
+        $catalog_id
+    ), ARRAY_A);
     
     return new WP_REST_Response($updated_catalog, 200);
 }
@@ -968,8 +1296,8 @@ function floresinc_delete_catalog_endpoint(WP_REST_Request $request) {
     $associations_table = $wpdb->prefix . 'floresinc_catalog_product_associations';
     
     // Verificar que el catálogo existe y pertenece al usuario
-    $catalog = $wpdb->get_row($wpdb->prepare("
-        SELECT * FROM $catalogs_table 
+    $catalog = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $catalogs_table 
         WHERE id = %d AND user_id = %d
     ", $catalog_id, $user_id));
     
@@ -1017,8 +1345,8 @@ function floresinc_generate_catalog_pdf_endpoint(WP_REST_Request $request) {
     $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
     
     // Verificar que el catálogo existe y pertenece al usuario
-    $catalog = $wpdb->get_row($wpdb->prepare("
-        SELECT * FROM $catalogs_table 
+    $catalog = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $catalogs_table 
         WHERE id = %d AND user_id = %d
     ", $catalog_id, $user_id));
     
@@ -1027,8 +1355,8 @@ function floresinc_generate_catalog_pdf_endpoint(WP_REST_Request $request) {
     }
     
     // Obtener IDs de productos
-    $product_ids = $wpdb->get_col($wpdb->prepare("
-        SELECT product_id FROM $catalog_products_table 
+    $product_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT product_id FROM $catalog_products_table 
         WHERE catalog_id = %d
     ", $catalog_id));
     
@@ -1257,7 +1585,7 @@ function floresinc_update_catalog_tables_endpoint(WP_REST_Request $request) {
         floresinc_create_catalog_tables();
         
         // Verificar y añadir las columnas necesarias
-        floresinc_check_catalog_table_columns();
+        floresinc_check_and_update_tables();
         
         return new WP_REST_Response([
             'success' => true,
@@ -1274,6 +1602,9 @@ function floresinc_update_catalog_tables_endpoint(WP_REST_Request $request) {
 function floresinc_create_custom_product_endpoint(WP_REST_Request $request) {
     global $wpdb;
     $user_id = get_current_user_id();
+    
+    // Verificar y actualizar la estructura de las tablas antes de proceder
+    floresinc_check_and_update_tables();
     
     // Obtener y validar los datos
     $params = $request->get_json_params();
@@ -1363,13 +1694,15 @@ function floresinc_create_custom_product_endpoint(WP_REST_Request $request) {
         'catalog_price' => $price,
         'catalog_sku' => $sku,
         'catalog_image' => $image,
-        'catalog_images' => $images_json
+        'catalog_images' => $images_json,
+        'is_custom' => 1
     ];
     
     // Log adicional para verificar los datos justo antes de la inserción
     error_log('Datos finales a insertar en la tabla ' . $catalog_products_table . ': ' . json_encode($insert_data));
     
-    $insert_format = ['%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s', '%s'];
+    // Asegurarse de que el número de formatos coincida con el número de campos
+    $insert_format = ['%d', '%d', '%s', '%s', '%s', '%f', '%s', '%s', '%s', '%d'];
     
     // Usar transacción para garantizar integridad
     $wpdb->query('START TRANSACTION');
@@ -1392,6 +1725,19 @@ function floresinc_create_custom_product_endpoint(WP_REST_Request $request) {
         $table_columns = $wpdb->get_results("DESCRIBE $catalog_products_table");
         $column_names = array_map(function($col) { return $col->Field; }, $table_columns);
         error_log("Columnas en la tabla $catalog_products_table: " . implode(', ', $column_names));
+        
+        // Verificar la existencia de la columna is_custom antes de insertar
+        if (!in_array('is_custom', $column_names)) {
+            error_log("ADVERTENCIA: La columna 'is_custom' no existe en la tabla $catalog_products_table");
+            // Eliminar el campo is_custom si la columna no existe
+            unset($insert_data['is_custom']);
+            // Ajustar el formato de inserción
+            $insert_format = array_slice($insert_format, 0, count($insert_data));
+        }
+        
+        error_log("Datos finales a insertar después de la verificación: " . json_encode($insert_data));
+        error_log("Formatos de inserción: " . json_encode($insert_format));
+        error_log("Número de campos: " . count($insert_data) . ", Número de formatos: " . count($insert_format));
         
         $result = $wpdb->insert(
             $catalog_products_table,
