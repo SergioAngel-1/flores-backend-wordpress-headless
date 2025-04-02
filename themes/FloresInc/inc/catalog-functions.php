@@ -465,27 +465,73 @@ function floresinc_get_catalog_complete_products_endpoint(WP_REST_Request $reque
     
     // Transformar los datos para que sean compatibles con el formato esperado en el frontend
     $formatted_products = array_map(function($product) {
-        $images = !empty($product->catalog_images) ? json_decode($product->catalog_images, true) : [];
         $image_urls = [];
         
-        if (!empty($images)) {
-            $image_urls = array_map(function($img_id) {
-                // Asegurar que devolvemos URLs completas y absolutas
-                $url = wp_get_attachment_url($img_id);
-                
-                // Verificar si la URL es relativa y convertirla a absoluta
-                if ($url && strpos($url, 'http') !== 0) {
-                    $url = site_url($url);
+        // Procesar catalog_images (que ahora sabemos contiene URLs directamente, no IDs)
+        if (!empty($product->catalog_images)) {
+            // Intentar decodificar como JSON
+            $images = json_decode($product->catalog_images, true);
+            
+            // Si es un array, procesar cada URL
+            if (is_array($images)) {
+                foreach ($images as $img_url) {
+                    if (!empty($img_url) && $img_url !== 'false') {
+                        // Limpiar posibles barras invertidas escapadas
+                        $clean_url = str_replace('\\/', '/', $img_url);
+                        
+                        // Convertir URL a formato absoluto si es necesario
+                        if (!empty($clean_url) && strpos($clean_url, 'http') !== 0) {
+                            // Si comienza con una barra, es relativa al sitio
+                            if (strpos($clean_url, '/') === 0) {
+                                $clean_url = site_url($clean_url);
+                            } 
+                            // Si contiene '.local', probablemente necesite 'http://' prefijo
+                            elseif (strpos($clean_url, '.local') !== false) {
+                                $clean_url = 'http://' . $clean_url;
+                            }
+                            // En otros casos, asumir http://
+                            else {
+                                $clean_url = 'http://' . $clean_url;
+                            }
+                        }
+                        
+                        $image_urls[] = $clean_url;
+                    }
                 }
-                
-                return $url;
-            }, $images);
+            }
         }
         
-        // Si hay catalog_image, asegurar que es una URL absoluta
+        // Si no hay imágenes válidas, usar imagen por defecto
+        if (empty($image_urls)) {
+            $image_urls = [site_url('/wp-content/themes/FloresInc/assets/img/no-image.svg')];
+        }
+        
+        // Procesar catalog_image - también es una URL directa, no un ID
         $catalog_image = $product->catalog_image;
-        if (!empty($catalog_image) && strpos($catalog_image, 'http') !== 0) {
-            $catalog_image = site_url($catalog_image);
+        
+        // Limpiar la URL de catalog_image
+        if (!empty($catalog_image) && $catalog_image !== 'false') {
+            // Limpiar posibles barras invertidas escapadas
+            $catalog_image = str_replace('\\/', '/', $catalog_image);
+            
+            // Convertir URL a formato absoluto si es necesario
+            if (strpos($catalog_image, 'http') !== 0) {
+                // Si comienza con una barra, es relativa al sitio
+                if (strpos($catalog_image, '/') === 0) {
+                    $catalog_image = site_url($catalog_image);
+                } 
+                // Si contiene '.local', probablemente necesite 'http://' prefijo
+                elseif (strpos($catalog_image, '.local') !== false) {
+                    $catalog_image = 'http://' . $catalog_image;
+                }
+                // En otros casos, asumir http://
+                else {
+                    $catalog_image = 'http://' . $catalog_image;
+                }
+            }
+        } else {
+            // Si es 'false' o está vacío, usar la primera imagen de image_urls
+            $catalog_image = !empty($image_urls) ? $image_urls[0] : site_url('/wp-content/themes/FloresInc/assets/img/no-image.svg');
         }
         
         return [
@@ -505,7 +551,7 @@ function floresinc_get_catalog_complete_products_endpoint(WP_REST_Request $reque
             'catalog_description' => $product->catalog_description,
             'catalog_short_description' => $product->catalog_short_description,
             'catalog_sku' => $product->catalog_sku,
-            'catalog_image' => !empty($image_urls) ? $image_urls[0] : $catalog_image,
+            'catalog_image' => $catalog_image,
             'catalog_images' => $image_urls,
             'is_custom' => (bool) $product->is_custom
         ];
@@ -677,6 +723,11 @@ function floresinc_update_catalog_product_endpoint(WP_REST_Request $request) {
                 $url = site_url($url);
             }
             
+            // Si no se pudo obtener una URL válida, devolver una imagen por defecto
+            if (!$url) {
+                $url = site_url('/wp-content/themes/FloresInc/assets/img/no-image.svg');
+            }
+            
             return $url;
         }, $images);
     }
@@ -685,6 +736,11 @@ function floresinc_update_catalog_product_endpoint(WP_REST_Request $request) {
     $catalog_image = $updated_product->catalog_image;
     if (!empty($catalog_image) && strpos($catalog_image, 'http') !== 0) {
         $catalog_image = site_url($catalog_image);
+    }
+    
+    // Si no se pudo obtener una URL válida, devolver una imagen por defecto
+    if (!$catalog_image) {
+        $catalog_image = site_url('/wp-content/themes/FloresInc/assets/img/no-image.svg');
     }
     
     $response_data = [
