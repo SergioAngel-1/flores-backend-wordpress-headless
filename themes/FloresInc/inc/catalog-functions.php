@@ -23,6 +23,9 @@ add_action('init', 'floresinc_init_catalog_endpoints');
  * Registrar los endpoints de API para catálogos
  */
 function floresinc_register_catalog_endpoints() {
+    // Asegurarse de que las tablas estén actualizadas
+    floresinc_check_and_update_tables();
+    
     // Namespace base para nuestros endpoints
     $namespace = 'floresinc/v1';
     
@@ -126,8 +129,8 @@ function floresinc_register_catalog_endpoints() {
     ]);
     
     // Endpoint para actualizar manualmente la estructura de la tabla
-    register_rest_route($namespace, '/catalogs/update-tables', [
-        'methods' => 'POST',
+    register_rest_route($namespace, '/update-tables', [
+        'methods' => 'GET',
         'callback' => 'floresinc_update_catalog_tables_endpoint',
         'permission_callback' => function() {
             return is_user_logged_in();
@@ -144,12 +147,13 @@ function floresinc_create_catalog_tables() {
     $charset_collate = $wpdb->get_charset_collate();
     
     // Tabla para catálogos
-    $catalogs_table = $wpdb->prefix . 'floresinc_catalogs';
+    $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
     $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
     
-    $catalogs_sql = "CREATE TABLE $catalogs_table (
+    $catalogs_sql = "CREATE TABLE $catalog_table (
         id bigint(20) NOT NULL AUTO_INCREMENT,
         name varchar(255) NOT NULL,
+        logo_url varchar(255) NULL,
         created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         user_id bigint(20) NOT NULL,
@@ -199,28 +203,32 @@ function floresinc_check_and_update_tables() {
         
         // Lista de columnas a verificar y añadir si no existen
         $columns = [
-            'catalog_price' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_price` decimal(10,6) NULL AFTER `product_id`",
-            'product_price' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `product_price` decimal(10,6) NULL AFTER `catalog_price`",
-            'catalog_name' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_name` varchar(255) NULL AFTER `product_price`",
-            'catalog_description' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_description` text NULL AFTER `catalog_name`",
-            'catalog_short_description' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_short_description` text NULL AFTER `catalog_description`",
-            'catalog_sku' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_sku` varchar(100) NULL AFTER `catalog_short_description`",
-            'catalog_image' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_image` varchar(255) NULL AFTER `catalog_sku`",
-            'catalog_images' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_images` text NULL AFTER `catalog_image`",
-            'is_custom' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `is_custom` tinyint(1) NOT NULL DEFAULT 0 AFTER `catalog_images`",
-            'updated_at' => "ALTER TABLE `$catalog_products_table` ADD COLUMN `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`"
+            'catalog_price' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_price` decimal(10,6) NULL AFTER `product_id`", $catalog_products_table],
+            'product_price' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `product_price` decimal(10,6) NULL AFTER `catalog_price`", $catalog_products_table],
+            'catalog_name' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_name` varchar(255) NULL AFTER `product_price`", $catalog_products_table],
+            'catalog_description' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_description` text NULL AFTER `catalog_name`", $catalog_products_table],
+            'catalog_short_description' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_short_description` text NULL AFTER `catalog_description`", $catalog_products_table],
+            'catalog_sku' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_sku` varchar(100) NULL AFTER `catalog_short_description`", $catalog_products_table],
+            'catalog_image' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_image` varchar(255) NULL AFTER `catalog_sku`", $catalog_products_table],
+            'catalog_images' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `catalog_images` text NULL AFTER `catalog_image`", $catalog_products_table],
+            'is_custom' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `is_custom` tinyint(1) NOT NULL DEFAULT 0 AFTER `catalog_images`", $catalog_products_table],
+            'updated_at' => ["ALTER TABLE `$catalog_products_table` ADD COLUMN `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`", $catalog_products_table],
+            'logo_url' => ["ALTER TABLE `$catalog_table` ADD COLUMN `logo_url` varchar(255) NULL AFTER `name`", $catalog_table]
         ];
         
         // Verificar si las columnas existen y añadirlas si no
-        foreach ($columns as $column => $alter_sql) {
-            $column_exists = $wpdb->get_var("SHOW COLUMNS FROM `$catalog_products_table` LIKE '$column'");
+        foreach ($columns as $column => $config) {
+            list($alter_sql, $table) = $config;
+            
+            // Verificar si la columna existe en la tabla correspondiente
+            $column_exists = $wpdb->get_var("SHOW COLUMNS FROM `$table` LIKE '$column'");
             
             if (!$column_exists) {
-                error_log("La columna '$column' no existe en la tabla $catalog_products_table. Añadiéndola...");
+                error_log("La columna '$column' no existe en la tabla $table. Añadiéndola...");
                 $wpdb->query($alter_sql);
                 
                 // Verificar si la columna se añadió correctamente
-                $column_added = $wpdb->get_var("SHOW COLUMNS FROM `$catalog_products_table` LIKE '$column'");
+                $column_added = $wpdb->get_var("SHOW COLUMNS FROM `$table` LIKE '$column'");
                 if ($column_added) {
                     error_log("Columna '$column' añadida correctamente.");
                 } else {
@@ -228,7 +236,7 @@ function floresinc_check_and_update_tables() {
                     error_log("Error de MySQL: " . $wpdb->last_error);
                 }
             } else {
-                error_log("La columna '$column' ya existe en la tabla $catalog_products_table.");
+                error_log("La columna '$column' ya existe en la tabla $table.");
             }
         }
         
@@ -268,15 +276,13 @@ function floresinc_get_catalogs_endpoint(WP_REST_Request $request) {
     
     // Obtener catálogos
     $catalogs = $wpdb->get_results($wpdb->prepare("
-        SELECT c.*, (
-            SELECT COUNT(*) 
-            FROM $catalog_products_table cp 
-            WHERE cp.catalog_id = c.id
-        ) as product_count
-        FROM $catalogs_table c
-        $where
-        ORDER BY updated_at DESC
-        LIMIT %d OFFSET %d
+        SELECT c.id, c.name, c.logo_url, c.created_at, c.updated_at, COUNT(cp.id) as product_count
+         FROM $catalogs_table c
+         LEFT JOIN $catalog_products_table cp ON c.id = cp.catalog_id
+         $where
+         GROUP BY c.id
+         ORDER BY updated_at DESC
+         LIMIT %d OFFSET %d
     ", array_merge($where_args, [$per_page, $offset])), ARRAY_A);
     
     // Si no hay catálogos, devolver array vacío
@@ -300,7 +306,7 @@ function floresinc_get_catalog_endpoint(WP_REST_Request $request) {
     
     // Obtener el catálogo
     $catalog = $wpdb->get_row($wpdb->prepare("
-        SELECT c.*, (
+        SELECT c.id, c.name, c.logo_url, c.created_at, c.updated_at, (
             SELECT COUNT(*) 
             FROM $catalog_products_table cp 
             WHERE cp.catalog_id = c.id
@@ -528,7 +534,7 @@ function floresinc_get_catalog_complete_products_endpoint(WP_REST_Request $reque
             'catalog_description' => $product->catalog_description,
             'catalog_short_description' => $product->catalog_short_description,
             'catalog_sku' => $product->catalog_sku,
-            'catalog_image' => !empty($catalog_images_cleaned) ? $catalog_images_cleaned[0] : $catalog_image,
+            'catalog_image' => !empty($image_urls) ? $image_urls[0] : $catalog_image,
             'catalog_images' => $catalog_images_cleaned,
             'is_custom' => (bool) $product->is_custom
         ];
@@ -768,14 +774,15 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
         }
         
         $name = sanitize_text_field($params['name']);
+        $logo_url = isset($params['logo_url']) ? esc_url_raw($params['logo_url']) : '';
         $products = isset($params['products']) && is_array($params['products']) ? $params['products'] : [];
         
-        $catalogs_table = $wpdb->prefix . 'floresinc_catalogs';
+        $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
         $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
         $associations_table = $wpdb->prefix . 'floresinc_catalog_product_associations';
         
         // Verificar si las tablas existen
-        $catalogs_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$catalogs_table'") === $catalogs_table;
+        $catalogs_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$catalog_table'") === $catalog_table;
         $catalog_products_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$catalog_products_table'") === $catalog_products_table;
         
         if (!$catalogs_table_exists || !$catalog_products_table_exists) {
@@ -783,7 +790,7 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
             floresinc_create_catalog_tables();
             
             // Verificar nuevamente
-            $catalogs_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$catalogs_table'") === $catalogs_table;
+            $catalogs_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$catalog_table'") === $catalog_table;
             $catalog_products_table_exists = $wpdb->get_var("SHOW TABLES LIKE '$catalog_products_table'") === $catalog_products_table;
             
             if (!$catalogs_table_exists || !$catalog_products_table_exists) {
@@ -824,12 +831,13 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
         
         // Insertar el catálogo
         $result = $wpdb->insert(
-            $catalogs_table,
+            $catalog_table,
             [
                 'name' => $name,
+                'logo_url' => $logo_url,
                 'user_id' => $user_id
             ],
-            ['%s', '%d']
+            ['%s', '%s', '%d']
         );
         
         if ($result === false) {
@@ -1039,7 +1047,7 @@ function floresinc_create_catalog_endpoint(WP_REST_Request $request) {
                 FROM $catalog_products_table cp 
                 WHERE cp.catalog_id = c.id
             ) as product_count
-            FROM $catalogs_table c
+            FROM $catalog_table c
             WHERE c.id = %d
         ", $catalog_id), ARRAY_A);
         
@@ -1088,6 +1096,7 @@ function floresinc_update_catalog_endpoint(WP_REST_Request $request) {
     
     $params = $request->get_json_params();
     $name = isset($params['name']) ? sanitize_text_field($params['name']) : null;
+    $logo_url = isset($params['logo_url']) ? esc_url_raw($params['logo_url']) : null;
     $products = isset($params['products']) ? $params['products'] : null;
     
     // Actualizar nombre si se proporcionó
@@ -1095,6 +1104,17 @@ function floresinc_update_catalog_endpoint(WP_REST_Request $request) {
         $wpdb->update(
             $catalogs_table,
             ['name' => $name],
+            ['id' => $catalog_id],
+            ['%s'],
+            ['%d']
+        );
+    }
+    
+    // Actualizar logo_url si se proporcionó
+    if ($logo_url) {
+        $wpdb->update(
+            $catalogs_table,
+            ['logo_url' => $logo_url],
             ['id' => $catalog_id],
             ['%s'],
             ['%d']
@@ -1909,6 +1929,8 @@ function floresinc_update_custom_product_endpoint(WP_REST_Request $request) {
     $price = isset($params['price']) ? floatval($params['price']) : 0;
     $sku = isset($params['sku']) ? sanitize_text_field($params['sku']) : '';
     $image = isset($params['image']) ? sanitize_text_field($params['image']) : '';
+    $images = isset($params['images']) && is_array($params['images']) ? $params['images'] : [];
+    $images_json = !empty($images) ? json_encode($images) : null;
     
     $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
     
@@ -1929,10 +1951,11 @@ function floresinc_update_custom_product_endpoint(WP_REST_Request $request) {
         'catalog_short_description' => $short_description,
         'catalog_price' => $price,
         'catalog_sku' => $sku,
-        'catalog_image' => $image
+        'catalog_image' => $image,
+        'catalog_images' => $images_json
     ];
     
-    $update_format = ['%s', '%s', '%s', '%f', '%s', '%s'];
+    $update_format = ['%s', '%s', '%s', '%f', '%s', '%s', '%s'];
     
     $wpdb->update(
         $catalog_products_table,
