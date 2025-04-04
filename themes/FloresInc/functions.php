@@ -22,7 +22,7 @@ require_once __DIR__ . '/inc/shop-manager-settings.php';
 require_once __DIR__ . '/inc/api-optimization.php';
 
 // Incluir el archivo de funciones de catálogos
-require_once __DIR__ . '/inc/catalog-functions.php';
+require_once __DIR__ . '/inc/catalog-functions-loader.php';
 
 /**
  * Registro de usuarios - Endpoint personalizado
