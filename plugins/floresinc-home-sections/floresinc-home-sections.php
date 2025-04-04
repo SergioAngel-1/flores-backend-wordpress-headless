@@ -301,6 +301,9 @@ class FloresInc_Home_Sections {
      * Callback para obtener todas las secciones
      */
     public function get_home_sections() {
+        // Registrar en el log para depuración
+        error_log('Ejecutando get_home_sections');
+        
         $options = get_option('floresinc_home_sections_options');
         $sections = array();
         
@@ -330,13 +333,27 @@ class FloresInc_Home_Sections {
             );
         }
         
-        // Configurar encabezados CORS
+        // Configurar encabezados CORS para permitir encabezados de caché
         header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET');
-        header('Access-Control-Allow-Headers: X-Requested-With, Content-Type, Accept, Origin, Authorization');
+        header('Access-Control-Allow-Methods: GET, OPTIONS');
+        header('Access-Control-Allow-Headers: X-Requested-With, Content-Type, Accept, Origin, Authorization, Cache-Control, Pragma');
+        header('Access-Control-Expose-Headers: X-WP-Cache-Status, Cache-Control');
+        
+        // Si es una solicitud OPTIONS (preflight), terminar aquí
+        if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+            status_header(200);
+            exit();
+        }
+        
+        // Agregar encabezados de caché
+        header('Cache-Control: public, max-age=1800'); // 30 minutos
+        header('X-WP-Cache-Status: MISS');
         
         // Convertir a array indexado para que se serialice como JSON array en lugar de objeto
         $sections_array = array_values($sections);
+        
+        // Registrar en el log la cantidad de secciones encontradas
+        error_log('Secciones encontradas: ' . count($sections_array));
         
         return new WP_REST_Response($sections_array, 200);
     }
@@ -345,12 +362,16 @@ class FloresInc_Home_Sections {
      * Callback para obtener productos de una sección específica
      */
     public function get_section_products($request) {
+        // Registrar en el log para depuración
         $section_id = $request->get_param('section_id');
+        error_log("Obteniendo productos para la sección: {$section_id}");
+        
         $options = get_option('floresinc_home_sections_options');
         
         $category_id = isset($options[$section_id . '_category']) ? $options[$section_id . '_category'] : '';
         
         if (empty($category_id)) {
+            error_log("Error: No hay categoría configurada para la sección {$section_id}");
             return new WP_REST_Response(array(
                 'error' => 'No hay categoría configurada para esta sección',
             ), 404);
@@ -486,10 +507,21 @@ class FloresInc_Home_Sections {
         
         $category = get_term($category_id, 'product_cat');
         
-        // Configurar encabezados CORS
+        // Configurar encabezados CORS para permitir encabezados de caché
         header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET');
-        header('Access-Control-Allow-Headers: X-Requested-With, Content-Type, Accept, Origin, Authorization');
+        header('Access-Control-Allow-Methods: GET, OPTIONS');
+        header('Access-Control-Allow-Headers: X-Requested-With, Content-Type, Accept, Origin, Authorization, Cache-Control, Pragma');
+        header('Access-Control-Expose-Headers: X-WP-Cache-Status, Cache-Control');
+        
+        // Si es una solicitud OPTIONS (preflight), terminar aquí
+        if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+            status_header(200);
+            exit();
+        }
+        
+        // Agregar encabezados de caché
+        header('Cache-Control: public, max-age=1800'); // 30 minutos
+        header('X-WP-Cache-Status: MISS');
         
         $response = array(
             'id' => $section_id,
@@ -501,6 +533,9 @@ class FloresInc_Home_Sections {
             'subtitle' => isset($options[$section_id . '_subtitle']) ? $options[$section_id . '_subtitle'] : '',
             'products' => $products,
         );
+        
+        // Registrar en el log la cantidad de productos encontrados
+        error_log("Productos encontrados para la sección {$section_id}: " . count($products));
         
         return new WP_REST_Response($response, 200);
     }

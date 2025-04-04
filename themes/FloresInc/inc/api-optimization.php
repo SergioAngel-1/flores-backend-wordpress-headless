@@ -19,7 +19,7 @@ add_action('after_setup_theme', function() {
  * Esta constante permite desactivar rápidamente todo el sistema de optimización
  */
 if (!defined('DISABLE_API_OPTIMIZATION')) {
-    define('DISABLE_API_OPTIMIZATION', true);
+    define('DISABLE_API_OPTIMIZATION', false);
 }
 
 /**
@@ -32,20 +32,27 @@ class API_Cache_Manager {
     
     // Tiempos de expiración predeterminados (en segundos)
     private $ttl = [
-        'product' => 300,        // 5 minutos para productos individuales
-        'products' => 120,       // 2 minutos para listas de productos
-        'category' => 1800,      // 30 minutos para categorías individuales
-        'categories' => 1800,    // 30 minutos para listas de categorías
-        'user' => 600,           // 10 minutos para datos de usuario
-        'catalog' => 600,        // 10 minutos para catálogos
-        'banner' => 1800,        // 30 minutos para banners
-        'homeSection' => 300,    // 5 minutos para secciones de inicio
-        'legal' => 3600          // 60 minutos para contenido legal
+        'product' => 3600,       // 60 minutos para productos individuales
+        'products' => 1800,      // 30 minutos para listas de productos
+        'category' => 3600,      // 60 minutos para categorías individuales
+        'categories' => 3600,    // 60 minutos para listas de categorías
+        'user' => 1800,          // 30 minutos para datos de usuario
+        'users' => 1800,         // 30 minutos para listas de usuarios
+        'catalog' => 3600,       // 60 minutos para catálogos
+        'banner' => 3600,        // 60 minutos para banners
+        'homeSection' => 1800,   // 30 minutos para secciones de inicio
+        'menu' => 3600,          // 60 minutos para menú principal
+        'legal' => 7200,         // 120 minutos para contenido legal
+        'posts' => 1800,         // 30 minutos para posts
+        'pages' => 3600,         // 60 minutos para páginas
+        'tags' => 3600,          // 60 minutos para etiquetas
+        'floresinc/v1' => 1800   // 30 minutos para endpoints de floresinc/v1
     ];
     
     // Lista de rutas y namespaces que nunca deben ser cacheados
     private $excluded_routes = [
         '/jwt-auth/',          // Autenticación JWT
+        '/jwt-auth/v1/token', // Endpoint específico de autenticación JWT
         '/aam/',               // Advanced Access Manager
         '/wpml/',              // WPML
         '/contact-form-7/',    // Contact Form 7
@@ -54,7 +61,8 @@ class API_Cache_Manager {
         'token',               // Cualquier endpoint relacionado con tokens
         'login',               // Cualquier endpoint relacionado con login
         'user/me',             // Endpoint de usuario actual
-        'logout'               // Cualquier endpoint relacionado con logout
+        'logout',              // Cualquier endpoint relacionado con logout
+        'register'             // Endpoint de registro de usuarios
     ];
     
     /**
@@ -188,6 +196,36 @@ class API_Cache_Manager {
     }
     
     /**
+     * Obtiene el tiempo de vida (TTL) configurado para un tipo de contenido
+     * 
+     * @param string $content_type El tipo de contenido
+     * @return int El tiempo de vida en segundos
+     */
+    public function get_ttl_for_type($content_type) {
+        // Si el tipo existe en la configuración, devolver su TTL
+        if (isset($this->ttl[$content_type])) {
+            return $this->ttl[$content_type];
+        }
+        
+        // Si es un tipo singular que no existe pero su plural sí
+        $plural = $content_type . 's';
+        if (isset($this->ttl[$plural])) {
+            return $this->ttl[$plural];
+        }
+        
+        // Si es un tipo plural que no existe pero su singular sí
+        if (substr($content_type, -1) === 's') {
+            $singular = substr($content_type, 0, -1);
+            if (isset($this->ttl[$singular])) {
+                return $this->ttl[$singular];
+            }
+        }
+        
+        // Valor predeterminado si no se encuentra el tipo
+        return 1800; // 30 minutos por defecto
+    }
+    
+    /**
      * Obtener la instancia singleton
      */
     public static function instance() {
@@ -214,6 +252,10 @@ function invalidate_product_cache($post_id) {
         return;
     }
     
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("Invalidando caché de producto: {$post_id}");
+    }
+    
     flores_api_cache()->invalidate_by_type('product');
     flores_api_cache()->invalidate_by_type('products');
     
@@ -224,6 +266,9 @@ function invalidate_product_cache($post_id) {
             flores_api_cache()->invalidate('category', $term->term_id);
         }
     }
+    
+    // También invalidar caché de secciones de inicio, ya que pueden contener este producto
+    flores_api_cache()->invalidate_by_type('homeSection');
 }
 add_action('save_post_product', 'invalidate_product_cache');
 add_action('woocommerce_update_product', 'invalidate_product_cache');
@@ -235,9 +280,16 @@ function invalidate_category_cache($term_id, $tt_id, $taxonomy) {
         return;
     }
     
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("Invalidando caché de categoría: {$term_id}");
+    }
+    
     flores_api_cache()->invalidate_by_type('category');
     flores_api_cache()->invalidate_by_type('categories');
-    flores_api_cache()->invalidate_by_type('products'); // Productos filtrados por categoría
+    flores_api_cache()->invalidate('category', $term_id);
+    
+    // También invalidar caché de secciones de inicio, ya que están vinculadas a categorías
+    flores_api_cache()->invalidate_by_type('homeSection');
 }
 add_action('create_term', 'invalidate_category_cache', 10, 3);
 add_action('edit_term', 'invalidate_category_cache', 10, 3);
@@ -250,6 +302,27 @@ function invalidate_user_cache($user_id) {
 add_action('profile_update', 'invalidate_user_cache');
 add_action('user_register', 'invalidate_user_cache');
 add_action('deleted_user', 'invalidate_user_cache');
+
+/**
+ * Invalidar caché de secciones de inicio cuando se actualizan las opciones
+ */
+function invalidate_home_sections_cache() {
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('Invalidando caché de secciones de inicio');
+    }
+    
+    // Obtener instancia de caché
+    $cache = flores_api_cache();
+    
+    // Invalidar caché de secciones de inicio
+    $cache->invalidate_by_type('homeSection');
+    
+    // También invalidar cualquier endpoint de floresinc/v1 relacionado
+    $cache->invalidate_by_type('floresinc/v1');
+}
+
+// Invalidar caché cuando se actualizan las opciones de las secciones de inicio
+add_action('update_option_floresinc_home_sections_options', 'invalidate_home_sections_cache');
 
 /**
  * Funcionalidad de procesamiento por lotes (Batch Processing)
@@ -591,9 +664,26 @@ function add_cache_to_rest_response($response, $handler, $request) {
         return $response;
     }
     
-    // Solo procesar respuestas exitosas
-    if (is_wp_error($response) || $response->get_status() !== 200) {
+    // Verificar si la respuesta es un objeto WP_REST_Response o un array
+    if (is_array($response)) {
+        // Si es un array, asumimos que es una respuesta válida
+        $response_data = $response;
+        $status_code = 200; // Asumimos éxito por defecto
+        
+        // Convertir el array a un objeto WP_REST_Response para poder establecer encabezados
+        $original_response = $response;
+        $response = new WP_REST_Response($response_data, $status_code);
+    } elseif (is_wp_error($response)) {
+        // Si es un error, no cachear
         return $response;
+    } else {
+        // Es un objeto WP_REST_Response
+        $status_code = $response->get_status();
+        // Solo procesar respuestas exitosas
+        if ($status_code !== 200) {
+            return $response;
+        }
+        $response_data = $response->get_data();
     }
     
     // Solo cachear GET requests
@@ -626,10 +716,18 @@ function add_cache_to_rest_response($response, $handler, $request) {
     // Cachear la respuesta
     flores_api_cache()->set(
         $content_type,
-        $response->get_data(),
+        $response_data,
         $id,
         $request->get_params()
     );
+    
+    // Registrar en el log para depuración
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("API Cache: Guardado en caché - {$route} (Tipo: {$content_type}, ID: {$id})");
+    }
+    
+    // Agregar encabezado para indicar que esta respuesta será cacheada en futuras solicitudes
+    $response->header('x-wp-cache-status', 'miss-stored');
     
     return $response;
 }
@@ -690,7 +788,19 @@ function check_cache_before_rest_request($response, $handler, $request) {
     if ($cached_data !== null) {
         // Crear respuesta con datos en caché
         $response = new WP_REST_Response($cached_data, 200);
-        $response->header('X-WP-From-Cache', 'true');
+        
+        // Agregar encabezados para indicar que esta respuesta proviene del caché
+        $response->header('x-wp-from-cache', 'true');
+        $response->header('x-wp-cache-status', 'hit');
+        
+        // Agregar encabezados de control de caché para navegadores
+        $ttl = flores_api_cache()->get_ttl_for_type($content_type);
+        $response->header('Cache-Control', 'public, max-age=' . $ttl);
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("API Cache Hit: {$route} (Tipo: {$content_type}, ID: {$id})");
+        }
+        
         return $response;
     }
     
@@ -705,16 +815,66 @@ add_filter('rest_pre_dispatch', 'check_cache_before_rest_request', 20, 3);
  * Identifica el tipo de contenido basado en la ruta de la API
  */
 function identify_content_type_from_route($route) {
-    if (preg_match('/\/wc\/v3\/products\/(\d+)/', $route)) {
-        return 'product';
-    } elseif (preg_match('/\/wc\/v3\/products/', $route)) {
+    // Registrar en el log para depuración si está habilitado
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("Identificando tipo de contenido para ruta: {$route}");
+    }
+    
+    // Patrones comunes de rutas
+    if (preg_match('#^/wc/v3/products(/\d+)?#', $route)) {
         return 'products';
-    } elseif (preg_match('/\/wc\/v3\/products\/categories\/(\d+)/', $route)) {
-        return 'category';
-    } elseif (preg_match('/\/wc\/v3\/products\/categories/', $route)) {
+    } else if (preg_match('#^/wc/v3/products/categories(/\d+)?#', $route)) {
         return 'categories';
-    } elseif (preg_match('/\/wp\/v2\/users\/(\d+)/', $route)) {
-        return 'user';
+    } else if (preg_match('#^/wp/v2/users(/\d+)?#', $route)) {
+        return 'users';
+    } else if (preg_match('#^/wp/v2/posts(/\d+)?#', $route)) {
+        return 'posts';
+    } else if (preg_match('#^/wp/v2/pages(/\d+)?#', $route)) {
+        return 'pages';
+    } else if (preg_match('#^/wp/v2/categories(/\d+)?#', $route)) {
+        return 'categories';
+    } else if (preg_match('#^/wp/v2/tags(/\d+)?#', $route)) {
+        return 'tags';
+    } else if (preg_match('#^/floresinc/v1/menu#', $route)) {
+        return 'menu';
+    } else if (preg_match('#^/floresinc/v1/home-sections#', $route)) {
+        return 'homeSection';
+    }
+    
+    // Detectar otros endpoints personalizados basados en patrones comunes
+    if (strpos($route, '/floresinc/v1/') === 0) {
+        // Extraer el nombre del endpoint (todo lo que sigue a /floresinc/v1/ hasta el siguiente / o el final)
+        if (preg_match('#^/floresinc/v1/([^/]+)#', $route, $matches)) {
+            $endpoint_name = $matches[1];
+            
+            // Registrar en el log para depuración
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log("Endpoint personalizado detectado: {$endpoint_name}");
+            }
+            
+            // Mapear endpoints personalizados a tipos de contenido
+            $custom_endpoints_map = [
+                'menu' => 'menu',
+                'featured-categories' => 'categories',
+                'promotional-grid' => 'homeSection',
+                // Agregar aquí más mapeos según sea necesario
+            ];
+            
+            // Verificar si es un endpoint más específico con subrutas
+            if (preg_match('#^/floresinc/v1/referrals/code#', $route)) {
+                return 'referral_code'; // Tipo específico para el código de referido
+            } else if (preg_match('#^/floresinc/v1/referrals/stats#', $route)) {
+                return 'referral_stats'; // Tipo específico para estadísticas de referidos
+            }
+            
+            // Si el endpoint está en nuestro mapa, devolver el tipo de contenido correspondiente
+            if (isset($custom_endpoints_map[$endpoint_name])) {
+                return $custom_endpoints_map[$endpoint_name];
+            }
+            
+            // Si no está en el mapa pero es un endpoint personalizado, usar el nombre como tipo
+            return $endpoint_name;
+        }
     }
     
     return null;
@@ -809,9 +969,12 @@ function flores_should_bypass_api_optimization() {
     // Revisar si la ruta contiene patrones sensibles
     $sensitive_patterns = [
         'jwt-auth',
+        '/jwt-auth/v1/',
         'token',
         'login',
         'logout',
+        'register',
+        'user/me',
         'auth',
         'wc/v3/orders',
         'user/me',

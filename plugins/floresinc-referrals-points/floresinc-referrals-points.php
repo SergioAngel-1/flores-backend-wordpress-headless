@@ -81,7 +81,8 @@ function floresinc_rp_add_cors_headers() {
         header("Access-Control-Allow-Origin: $origin");
         header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
         header("Access-Control-Allow-Credentials: true");
-        header("Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With");
+        header("Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, Cache-Control, Pragma");
+        header("Access-Control-Expose-Headers: X-WP-Cache-Status, Cache-Control");
     }
     
     // Si es una solicitud OPTIONS (preflight), devolver 200 OK
