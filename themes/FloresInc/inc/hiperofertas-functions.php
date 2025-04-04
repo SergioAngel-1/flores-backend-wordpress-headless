@@ -438,9 +438,27 @@ add_action('pre_get_posts', 'hiperoferta_column_orderby');
  */
 function register_hiperofertas_rest_route() {
     register_rest_route('floresinc/v1', '/hiperofertas', array(
-        'methods' => 'GET',
+        'methods'  => 'GET',
         'callback' => 'get_hiperofertas_callback',
-        'permission_callback' => '__return_true'
+        'permission_callback' => '__return_true', // Permitir acceso público
+        'args' => array(
+            'featured' => array(
+                'default' => false,
+                'sanitize_callback' => 'rest_sanitize_boolean',
+            ),
+            'limit' => array(
+                'default' => -1,
+                'sanitize_callback' => 'absint',
+            ),
+            'debug' => array(
+                'default' => false,
+                'sanitize_callback' => 'rest_sanitize_boolean',
+            ),
+            'ignore_dates' => array(
+                'default' => false,
+                'sanitize_callback' => 'rest_sanitize_boolean',
+            ),
+        ),
     ));
     
     // Log para depuración
@@ -454,6 +472,20 @@ add_action('rest_api_init', 'register_hiperofertas_rest_route', 10);
 function get_hiperofertas_callback($request) {
     $featured_only = isset($request['featured']) && $request['featured'] === 'true';
     $limit = isset($request['limit']) ? intval($request['limit']) : -1;
+    $debug = isset($request['debug']) && $request['debug'] === 'true';
+    $ignore_dates = isset($request['ignore_dates']) && $request['ignore_dates'] === 'true';
+    
+    // Array para guardar información de depuración
+    $debug_info = array(
+        'request_params' => array(
+            'featured_only' => $featured_only,
+            'limit' => $limit,
+            'debug' => $debug,
+            'ignore_dates' => $ignore_dates
+        ),
+        'current_date' => date('Y-m-d'),
+        'query_filters' => array()
+    );
     
     $args = array(
         'post_type' => 'hiperoferta',
@@ -466,21 +498,33 @@ function get_hiperofertas_callback($request) {
                 'key' => '_hiperoferta_active',
                 'value' => '1',
                 'compare' => '='
-            ),
-            array(
-                'key' => '_hiperoferta_start_date',
-                'value' => date('Y-m-d'),
-                'compare' => '<=',
-                'type' => 'DATE'
-            ),
-            array(
-                'key' => '_hiperoferta_end_date',
-                'value' => date('Y-m-d'),
-                'compare' => '>=',
-                'type' => 'DATE'
             )
         )
     );
+    
+    $debug_info['query_filters'][] = 'Filtro por hiperofertas activas';
+    
+    // Añadir filtros de fecha sólo si no estamos en modo de ignorar fechas
+    if (!$ignore_dates) {
+        $today = date('Y-m-d');
+        $args['meta_query'][] = array(
+            'key' => '_hiperoferta_start_date',
+            'value' => $today,
+            'compare' => '<=',
+            'type' => 'DATE'
+        );
+        
+        $args['meta_query'][] = array(
+            'key' => '_hiperoferta_end_date',
+            'value' => $today,
+            'compare' => '>=',
+            'type' => 'DATE'
+        );
+        
+        $debug_info['query_filters'][] = 'Filtro por fechas activas (inicio <= hoy AND fin >= hoy)';
+    } else {
+        $debug_info['query_filters'][] = 'Filtros de fecha ignorados por parámetro ignore_dates=true';
+    }
     
     // Filtrar por destacadas si se solicita
     if ($featured_only) {
@@ -562,5 +606,18 @@ function get_hiperofertas_callback($request) {
     
     wp_reset_postdata();
     
-    return $hiperofertas;
+    // Si estamos en modo debug, incluir información adicional
+    $response_data = $hiperofertas;
+    if ($debug) {
+        $debug_info['found_items'] = count($hiperofertas);
+        $debug_info['query_args'] = $args;
+        
+        $response_data = array(
+            'hiperofertas' => $hiperofertas,
+            'debug' => $debug_info
+        );
+    }
+    
+    // Usar WP_REST_Response explícitamente como otros endpoints
+    return new WP_REST_Response($response_data, 200);
 }
