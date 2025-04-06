@@ -32,21 +32,22 @@ class API_Cache_Manager {
     
     // Tiempos de expiración predeterminados (en segundos)
     private $ttl = [
-        'product' => 3600,       // 60 minutos para productos individuales
-        'products' => 1800,      // 30 minutos para listas de productos
-        'category' => 3600,      // 60 minutos para categorías individuales
-        'categories' => 3600,    // 60 minutos para listas de categorías
-        'user' => 1800,          // 30 minutos para datos de usuario
-        'users' => 1800,         // 30 minutos para listas de usuarios
-        'catalog' => 3600,       // 60 minutos para catálogos
-        'banner' => 3600,        // 60 minutos para banners
-        'homeSection' => 1800,   // 30 minutos para secciones de inicio
-        'menu' => 3600,          // 60 minutos para menú principal
-        'legal' => 7200,         // 120 minutos para contenido legal
-        'posts' => 1800,         // 30 minutos para posts
-        'pages' => 3600,         // 60 minutos para páginas
-        'tags' => 3600,          // 60 minutos para etiquetas
-        'floresinc/v1' => 1800   // 30 minutos para endpoints de floresinc/v1
+        'product' => 3600,         // 60 minutos para productos individuales
+        'products' => 1800,        // 30 minutos para listas de productos
+        'category' => 3600,        // 60 minutos para categorías individuales
+        'categories' => 3600,      // 60 minutos para listas de categorías
+        'user' => 1800,            // 30 minutos para datos de usuario
+        'users' => 1800,           // 30 minutos para listas de usuarios
+        'catalog' => 3600,         // 60 minutos para catálogos
+        'catalog_products' => 1800, // 30 minutos para productos de catálogos
+        'banner' => 3600,          // 60 minutos para banners
+        'homeSection' => 1800,     // 30 minutos para secciones de inicio
+        'menu' => 3600,            // 60 minutos para menú principal
+        'legal' => 7200,           // 120 minutos para contenido legal
+        'posts' => 1800,           // 30 minutos para posts
+        'pages' => 3600,           // 60 minutos para páginas
+        'tags' => 3600,            // 60 minutos para etiquetas
+        'floresinc/v1' => 1800     // 30 minutos para endpoints de floresinc/v1
     ];
     
     // Lista de rutas y namespaces que nunca deben ser cacheados
@@ -62,7 +63,10 @@ class API_Cache_Manager {
         'login',               // Cualquier endpoint relacionado con login
         'user/me',             // Endpoint de usuario actual
         'logout',              // Cualquier endpoint relacionado con logout
-        'register'             // Endpoint de registro de usuarios
+        'register',            // Endpoint de registro de usuarios
+        '/floresinc/v1/catalogs/update', // Actualización de catálogos
+        '/floresinc/v1/catalogs/create', // Creación de catálogos
+        '/floresinc/v1/catalogs/delete', // Eliminación de catálogos
     ];
     
     /**
@@ -839,6 +843,10 @@ function identify_content_type_from_route($route) {
         return 'menu';
     } else if (preg_match('#^/floresinc/v1/home-sections#', $route)) {
         return 'homeSection';
+    } else if (preg_match('#^/floresinc/v1/catalogs(/\d+)?$#', $route)) {
+        return 'catalog';
+    } else if (preg_match('#^/floresinc/v1/catalogs/\d+/complete-products#', $route)) {
+        return 'catalog_products';
     }
     
     // Detectar otros endpoints personalizados basados en patrones comunes
@@ -857,6 +865,7 @@ function identify_content_type_from_route($route) {
                 'menu' => 'menu',
                 'featured-categories' => 'categories',
                 'promotional-grid' => 'homeSection',
+                'catalogs' => 'catalog',
                 // Agregar aquí más mapeos según sea necesario
             ];
             

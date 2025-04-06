@@ -22,7 +22,7 @@ function flores_add_cors_headers() {
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
         
         // Permitir cabeceras específicas
-        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, X-WP-Nonce');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, X-WP-Nonce, Cache-Control, Pragma, Expires');
         
         // Permitir credenciales (cookies, etc.)
         header('Access-Control-Allow-Credentials: true');
@@ -51,7 +51,10 @@ function flores_allow_custom_headers($allow_headers) {
         'Authorization',
         'Content-Type',
         'X-Requested-With',
-        'X-WP-Nonce'
+        'X-WP-Nonce',
+        'Cache-Control',
+        'Pragma',
+        'Expires'
     );
 }
 add_filter('rest_allowed_cors_headers', 'flores_allow_custom_headers');
@@ -67,7 +70,7 @@ function flores_custom_endpoints_cors($response, $handler, $request) {
     if (strpos($request->get_route(), 'floresinc/v1') !== false) {
         header("Access-Control-Allow-Origin: $origin");
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, X-WP-Nonce');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, X-WP-Nonce, Cache-Control, Pragma, Expires');
         header('Access-Control-Allow-Credentials: true');
         header('Access-Control-Max-Age: 86400');
     }
@@ -87,7 +90,7 @@ function flores_handle_preflight_requests() {
         // Configurar encabezados CORS
         header("Access-Control-Allow-Origin: $origin");
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, X-WP-Nonce');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Requested-With, X-WP-Nonce, Cache-Control, Pragma, Expires');
         header('Access-Control-Allow-Credentials: true');
         header('Access-Control-Max-Age: 86400');
         

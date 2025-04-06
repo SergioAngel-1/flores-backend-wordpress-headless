@@ -87,17 +87,16 @@ function floresinc_get_catalogs_endpoint(WP_REST_Request $request) {
     $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
     $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
     
-    // Consultar solo catálogos del usuario actual
-    $catalogs = $wpdb->get_results($wpdb->prepare("
+    // Consultar todos los catálogos (sin restricción de usuario)
+    $catalogs = $wpdb->get_results("
         SELECT c.*, (
             SELECT COUNT(*) 
             FROM $catalog_products_table cp 
             WHERE cp.catalog_id = c.id
         ) as product_count
         FROM $catalog_table c
-        WHERE c.user_id = %d
         ORDER BY c.created_at DESC
-    ", $user_id), ARRAY_A);
+    ", ARRAY_A);
     
     if (!$catalogs) {
         return new WP_REST_Response([
@@ -124,7 +123,7 @@ function floresinc_get_catalog_endpoint(WP_REST_Request $request) {
     $catalog_table = $wpdb->prefix . 'floresinc_catalogs';
     $catalog_products_table = $wpdb->prefix . 'floresinc_catalog_products';
     
-    // Consultar el catálogo del usuario actual
+    // Consultar el catálogo (sin restricción de usuario)
     $catalog = $wpdb->get_row($wpdb->prepare("
         SELECT c.*, (
             SELECT COUNT(*) 
@@ -132,8 +131,8 @@ function floresinc_get_catalog_endpoint(WP_REST_Request $request) {
             WHERE cp.catalog_id = c.id
         ) as product_count
         FROM $catalog_table c
-        WHERE c.id = %d AND c.user_id = %d
-    ", $catalog_id, $user_id), ARRAY_A);
+        WHERE c.id = %d
+    ", $catalog_id), ARRAY_A);
     
     if (!$catalog) {
         return new WP_REST_Response([
