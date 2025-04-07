@@ -67,6 +67,13 @@ function floresinc_rp_register_routes() {
         }
     ]);
     
+    // Ruta para obtener la configuración del programa de referidos
+    register_rest_route($namespace, '/referrals/config', [
+        'methods' => 'GET',
+        'callback' => 'floresinc_rp_get_referral_config_endpoint',
+        'permission_callback' => '__return_true'
+    ]);
+    
     // Ruta para validar un código de referido
     register_rest_route($namespace, '/referrals/validate-code', [
         'methods' => 'GET',
@@ -120,14 +127,32 @@ function floresinc_rp_get_current_user_points_endpoint() {
     // Calcular valor monetario
     $options = FloresInc_RP()->get_options();
     $conversion_rate = $options['points_conversion_rate'];
-    $points_value = $user_points['balance'] / $conversion_rate;
+    $points_per_currency = $options['points_per_currency'] ?? 1;
+    
+    // Asegurarnos de que points_per_currency sea un número (puede ser decimal)
+    $points_per_currency = floatval($points_per_currency);
+    
+    // Calcular el valor monetario basado en points_per_currency
+    // Si points_per_currency = 0.1, significa que cada punto vale 0.1 unidades monetarias
+    // Por lo tanto, multiplicamos el balance por points_per_currency
+    $points_value = $user_points['balance'] * $points_per_currency;
+    
+    // Registrar valores para depuración
+    error_log(sprintf(
+        'Calculando valor monetario: Balance=%s, ConversionRate=%s, PointsPerCurrency=%s, Valor=%s',
+        $user_points['balance'],
+        $conversion_rate,
+        $points_per_currency,
+        $points_value
+    ));
     
     $response = [
         'balance' => $user_points['balance'],
         'total_earned' => $user_points['total_earned'],
         'used' => $user_points['used'],
         'monetary_value' => $points_value,
-        'conversion_rate' => $conversion_rate
+        'conversion_rate' => $conversion_rate,
+        'points_per_currency' => $points_per_currency
     ];
     
     return new WP_REST_Response($response, 200);
@@ -213,7 +238,9 @@ function floresinc_rp_get_user_referral_stats_endpoint() {
         'total_referrals' => $stats['total_referrals'],
         'direct_referrals' => $stats['direct_referrals'],
         'indirect_referrals' => $stats['indirect_referrals'],
-        'total_points_generated' => $stats['total_points_generated']
+        'total_points_generated' => $stats['total_points_generated'],
+        'points_from_level1' => $stats['points_from_level1'] ?? 0,
+        'points_from_level2' => $stats['points_from_level2'] ?? 0
     ];
     
     return new WP_REST_Response($response, 200);
@@ -342,43 +369,49 @@ function floresinc_rp_get_referral_stats($user_id) {
         ");
     }
     
-    // Total de Flores Coins generados
-    $query = $wpdb->prepare("
-        SELECT SUM(points) FROM $transactions_table 
-        WHERE user_id = %d AND (type = 'referral' OR type = 'referral_signup')
-    ", $user_id);
+    // Total de Flores Coins generados - NUEVA LÓGICA CON DIFERENCIACIÓN DE NIVELES
+    // Obtener las opciones del plugin para saber cuántos puntos se dan por registro en cada nivel
+    $options = get_option('floresinc_rp_settings', array());
+    $points_level1 = isset($options['signup_points_level1']) ? intval($options['signup_points_level1']) : 100;
+    $points_level2 = isset($options['signup_points_level2']) ? intval($options['signup_points_level2']) : 50;
     
-    // Registrar la consulta para depuración
-    error_log("Consulta de Flores Coins generados por referidos: " . $query);
+    // Inicializar contadores
+    $total_points_generated = 0;
+    $points_from_level1 = 0;
+    $points_from_level2 = 0;
+    $count_level1 = count($direct_referral_ids);
+    $count_level2 = 0;
     
-    $total_points_generated = $wpdb->get_var($query);
+    // Calcular puntos por referidos de primer nivel
+    if (!empty($direct_referral_ids)) {
+        $points_from_level1 = $count_level1 * $points_level1;
+        
+        // Obtener referidos de segundo nivel
+        $direct_ids_string = implode(',', array_map('intval', $direct_referral_ids));
+        $indirect_referral_ids = $wpdb->get_col("SELECT user_id FROM $referrals_table WHERE referrer_id IN ($direct_ids_string)");
+        
+        // Calcular puntos por referidos de segundo nivel
+        if (!empty($indirect_referral_ids)) {
+            $count_level2 = count($indirect_referral_ids);
+            $points_from_level2 = $count_level2 * $points_level2;
+        }
+    }
     
-    // Registrar el resultado para depuración
-    error_log("Resultado de Flores Coins generados por referidos para usuario ID $user_id: " . ($total_points_generated ?: '0'));
+    // Sumar los puntos de ambos niveles
+    $total_points_generated = $points_from_level1 + $points_from_level2;
     
-    // Verificar si hay transacciones de tipo referral_signup
-    $signup_count = $wpdb->get_var($wpdb->prepare("
-        SELECT COUNT(*) FROM $transactions_table 
-        WHERE user_id = %d AND type = 'referral_signup'
-    ", $user_id));
-    
-    // Registrar el conteo para depuración
-    error_log("Número de transacciones de tipo 'referral_signup' para usuario ID $user_id: $signup_count");
-    
-    // Verificar si hay transacciones de tipo referral
-    $referral_count = $wpdb->get_var($wpdb->prepare("
-        SELECT COUNT(*) FROM $transactions_table 
-        WHERE user_id = %d AND type = 'referral'
-    ", $user_id));
-    
-    // Registrar el conteo para depuración
-    error_log("Número de transacciones de tipo 'referral' para usuario ID $user_id: $referral_count");
+    // Registrar para depuración
+    error_log("Puntos generados por referidos de primer nivel: $points_from_level1 ($count_level1 referidos x $points_level1 puntos)");
+    error_log("Puntos generados por referidos de segundo nivel: $points_from_level2 ($count_level2 referidos x $points_level2 puntos)");
+    error_log("Total de Flores Coins generados por referidos para usuario ID $user_id: $total_points_generated");
     
     return [
         'total_referrals' => $direct_referrals + $indirect_referrals,
         'direct_referrals' => $direct_referrals,
         'indirect_referrals' => $indirect_referrals,
-        'total_points_generated' => $total_points_generated ? $total_points_generated : 0
+        'total_points_generated' => $total_points_generated ? $total_points_generated : 0,
+        'points_from_level1' => $points_from_level1,
+        'points_from_level2' => $points_from_level2
     ];
 }
 
@@ -519,4 +552,26 @@ function floresinc_rp_validate_referral_code_endpoint($request) {
             'username' => $user->user_login
         ]
     ]);
+}
+
+/**
+ * Endpoint: Obtener la configuración del programa de referidos
+ */
+function floresinc_rp_get_referral_config_endpoint() {
+    $options = get_option('floresinc_rp_settings', array());
+    
+    // Valores por defecto si no están configurados
+    $points_level1 = isset($options['signup_points_level1']) ? intval($options['signup_points_level1']) : 100;
+    $points_level2 = isset($options['signup_points_level2']) ? intval($options['signup_points_level2']) : 50;
+    $first_level_commission = isset($options['first_level_commission']) ? floatval($options['first_level_commission']) : 5;
+    $second_level_commission = isset($options['second_level_commission']) ? floatval($options['second_level_commission']) : 2;
+    
+    $response = [
+        'points_level1' => $points_level1,
+        'points_level2' => $points_level2,
+        'first_level_commission' => $first_level_commission,
+        'second_level_commission' => $second_level_commission
+    ];
+    
+    return new WP_REST_Response($response, 200);
 }

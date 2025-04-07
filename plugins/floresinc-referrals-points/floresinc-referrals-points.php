@@ -132,8 +132,9 @@ class FloresInc_Referrals_Points {
      */
     private function __construct() {
         // Cargar opciones
-        $this->options = get_option('floresinc_referrals_points_options', [
+        $this->options = get_option('floresinc_rp_settings', [
             'points_conversion_rate' => 100, // 100 puntos = 1 unidad de moneda
+            'points_per_currency' => 3,     // 3 puntos por cada unidad de moneda gastada
             'referral_commission_level1' => 10, // 10% en puntos para referidos directos
             'referral_commission_level2' => 5,  // 5% en puntos para referidos indirectos
             'points_expiration_days' => 365,    // Caducidad en días (0 = sin caducidad)
@@ -252,7 +253,7 @@ class FloresInc_Referrals_Points {
      */
     public function update_options($new_options) {
         $this->options = array_merge($this->options, $new_options);
-        update_option('floresinc_referrals_points_options', $this->options);
+        update_option('floresinc_rp_settings', $this->options);
     }
 }
 

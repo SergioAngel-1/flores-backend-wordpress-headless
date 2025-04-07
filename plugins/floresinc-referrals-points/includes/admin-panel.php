@@ -92,7 +92,7 @@ function floresinc_rp_admin_menu() {
  * Registrar configuraciones
  */
 function floresinc_rp_register_settings() {
-    register_setting('floresinc_rp_settings', 'floresinc_rp_options');
+    register_setting('floresinc_rp_settings', 'floresinc_referrals_points_options');
     
     add_settings_section(
         'floresinc_rp_general',
@@ -236,7 +236,7 @@ function floresinc_rp_field_points_per_currency_callback() {
     $options = FloresInc_RP()->get_options();
     $points = isset($options['points_per_currency']) ? $options['points_per_currency'] : 10;
     
-    echo '<input type="number" min="1" step="1" name="floresinc_rp_options[points_per_currency]" value="' . esc_attr($points) . '" class="small-text" />';
+    echo '<input type="number" min="0.1" step="0.1" name="floresinc_referrals_points_options[points_per_currency]" value="' . esc_attr($points) . '" class="small-text" />';
     echo ' <span class="description">' . __('Cuántos puntos dar por cada unidad de moneda gastada.', 'floresinc-rp') . '</span>';
 }
 
@@ -247,7 +247,7 @@ function floresinc_rp_field_points_conversion_rate_callback() {
     $options = FloresInc_RP()->get_options();
     $rate = isset($options['points_conversion_rate']) ? $options['points_conversion_rate'] : 100;
     
-    echo '<input type="number" min="1" step="1" name="floresinc_rp_options[points_conversion_rate]" value="' . esc_attr($rate) . '" class="small-text" />';
+    echo '<input type="number" min="1" step="1" name="floresinc_referrals_points_options[points_conversion_rate]" value="' . esc_attr($rate) . '" class="small-text" />';
     echo ' <span class="description">' . __('Cuántos puntos equivalen a 1 unidad de moneda.', 'floresinc-rp') . '</span>';
 }
 
@@ -258,7 +258,7 @@ function floresinc_rp_field_points_expiration_days_callback() {
     $options = FloresInc_RP()->get_options();
     $days = isset($options['points_expiration_days']) ? $options['points_expiration_days'] : 365;
     
-    echo '<input type="number" min="0" step="1" name="floresinc_rp_options[points_expiration_days]" value="' . esc_attr($days) . '" class="small-text" />';
+    echo '<input type="number" min="0" step="1" name="floresinc_referrals_points_options[points_expiration_days]" value="' . esc_attr($days) . '" class="small-text" />';
     echo ' <span class="description">' . __('Días hasta que expiran los puntos (0 = sin expiración).', 'floresinc-rp') . '</span>';
 }
 

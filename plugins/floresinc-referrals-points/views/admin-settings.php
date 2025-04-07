@@ -33,45 +33,46 @@
             <!-- Pestañas de configuración -->
             <div class="nav-tab-wrapper wp-clearfix">
                 <a href="#general-settings" class="nav-tab nav-tab-active"><?php _e('General', 'floresinc-rp'); ?></a>
-                <a href="#points-settings" class="nav-tab"><?php _e('Puntos', 'floresinc-rp'); ?></a>
+                <a href="#points-settings" class="nav-tab"><?php _e('Flores Coins', 'floresinc-rp'); ?></a>
                 <a href="#referral-settings" class="nav-tab"><?php _e('Referidos', 'floresinc-rp'); ?></a>
                 <a href="#display-settings" class="nav-tab"><?php _e('Visualización', 'floresinc-rp'); ?></a>
             </div>
             
             <!-- Sección General -->
             <div id="general-settings" class="tab-content active">
-                <h2><?php _e('Configuración General', 'floresinc-rp'); ?></h2>
+                <h2><?php _e('Configuración General del Sistema', 'floresinc-rp'); ?></h2>
+                <p class="description"><?php _e('Estas opciones controlan la activación o desactivación de los módulos principales del sistema.', 'floresinc-rp'); ?></p>
                 
                 <table class="form-table">
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Activar sistema de puntos', 'floresinc-rp'); ?>
+                            <?php _e('Sistema de Flores Coins', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="checkbox" name="floresinc_rp_settings[enable_points]" value="1" 
-                                <?php checked(1, $options['enable_points'] ?? 0); ?> />
+                                <?php checked(1, $options['enable_points'] ?? 1); ?> />
                             <p class="description">
-                                <?php _e('Habilita o deshabilita todo el sistema de puntos.', 'floresinc-rp'); ?>
+                                <?php _e('Cuando esta casilla está <strong>marcada</strong>, el sistema de Flores Coins está <strong>activo</strong>. Los clientes podrán ganar y canjear Flores Coins. Si la desactivas, todas las funciones relacionadas con Flores Coins dejarán de estar disponibles.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Activar sistema de referidos', 'floresinc-rp'); ?>
+                            <?php _e('Programa de Referidos', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="checkbox" name="floresinc_rp_settings[enable_referrals]" value="1" 
-                                <?php checked(1, $options['enable_referrals'] ?? 0); ?> />
+                                <?php checked(1, $options['enable_referrals'] ?? 1); ?> />
                             <p class="description">
-                                <?php _e('Habilita o deshabilita todo el sistema de referidos.', 'floresinc-rp'); ?>
+                                <?php _e('Cuando esta casilla está <strong>marcada</strong>, el programa de referidos está <strong>activo</strong>. Los clientes podrán compartir su código de referido y ganar Flores Coins cuando otros usuarios se registren usando su código. Si la desactivas, todas las funciones de referidos dejarán de estar disponibles.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Roles de usuario permitidos', 'floresinc-rp'); ?>
+                            <?php _e('Roles de usuario participantes', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <?php
@@ -89,86 +90,86 @@
                             }
                             ?>
                             <p class="description">
-                                <?php _e('Selecciona qué roles de usuario pueden participar en el programa de puntos y referidos.', 'floresinc-rp'); ?>
+                                <?php _e('Selecciona los roles de usuario que pueden participar en el programa de Flores Coins y referidos. <strong>Marca las casillas</strong> de los roles que deseas incluir. Por defecto, solo los clientes ("Customer") pueden participar.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                 </table>
             </div>
             
-            <!-- Sección de Puntos -->
+            <!-- Sección de Flores Coins -->
             <div id="points-settings" class="tab-content">
-                <h2><?php _e('Configuración de Puntos', 'floresinc-rp'); ?></h2>
+                <h2><?php _e('Configuración de Flores Coins', 'floresinc-rp'); ?></h2>
                 
                 <table class="form-table">
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Tasa de conversión de puntos', 'floresinc-rp'); ?>
+                            <?php _e('Tasa de conversión de Flores Coins', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[points_conversion_rate]" step="0.01" min="0" 
                                 value="<?php echo esc_attr($options['points_conversion_rate'] ?? 0.1); ?>" />
                             <p class="description">
-                                <?php _e('Valor monetario de cada punto (por ejemplo, 0.1 significa que 10 puntos = $1).', 'floresinc-rp'); ?>
+                                <?php _e('Valor monetario de cada Flores Coin (por ejemplo, 0.1 significa que 10 Flores Coins = $1).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Puntos por gasto', 'floresinc-rp'); ?>
+                            <?php _e('Flores Coins por compra', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[points_per_currency]" step="0.1" min="0" 
                                 value="<?php echo esc_attr($options['points_per_currency'] ?? 1); ?>" />
                             <p class="description">
-                                <?php _e('Cantidad de puntos otorgados por cada unidad de moneda gastada (por defecto: 1 punto por $1).', 'floresinc-rp'); ?>
+                                <?php _e('Cantidad de Flores Coins otorgados por cada peso gastado en la tienda (por defecto: 1 Flores Coin por $1).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Mínimo de puntos para canjear', 'floresinc-rp'); ?>
+                            <?php _e('Mínimo de Flores Coins para canjear', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[min_points_redemption]" min="0" 
                                 value="<?php echo esc_attr($options['min_points_redemption'] ?? 100); ?>" />
                             <p class="description">
-                                <?php _e('Cantidad mínima de puntos que un cliente debe acumular antes de poder canjearlos.', 'floresinc-rp'); ?>
+                                <?php _e('Cantidad mínima de Flores Coins que un cliente debe acumular antes de poder canjearlos por descuentos.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Máximo de puntos por orden', 'floresinc-rp'); ?>
+                            <?php _e('Máximo de Flores Coins por pedido', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[max_points_per_order]" min="0" 
                                 value="<?php echo esc_attr($options['max_points_per_order'] ?? 0); ?>" />
                             <p class="description">
-                                <?php _e('Máximo de puntos que se pueden usar en una sola orden (0 = sin límite).', 'floresinc-rp'); ?>
+                                <?php _e('Número máximo de Flores Coins que un cliente puede canjear en un solo pedido (0 = sin límite).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Expiración de puntos', 'floresinc-rp'); ?>
+                            <?php _e('Expiración de Flores Coins', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[points_expiry_days]" min="0" 
                                 value="<?php echo esc_attr($options['points_expiry_days'] ?? 365); ?>" />
                             <p class="description">
-                                <?php _e('Número de días después de los cuales expiran los puntos (0 = nunca expiran).', 'floresinc-rp'); ?>
+                                <?php _e('Número de días después de los cuales expiran los Flores Coins no utilizados (0 = nunca expiran).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Otorgar puntos para', 'floresinc-rp'); ?>
+                            <?php _e('Otorgar Flores Coins por', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <?php
@@ -196,31 +197,40 @@
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Puntos por registro', 'floresinc-rp'); ?>
+                            <?php _e('Flores Coins por registro', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[points_registration]" min="0" 
                                 value="<?php echo esc_attr($options['points_registration'] ?? 100); ?>" />
+                            <p class="description">
+                                <?php _e('Cantidad de Flores Coins otorgados cuando un nuevo usuario se registra en la tienda.', 'floresinc-rp'); ?>
+                            </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Puntos por reseña', 'floresinc-rp'); ?>
+                            <?php _e('Flores Coins por reseña', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[points_review]" min="0" 
                                 value="<?php echo esc_attr($options['points_review'] ?? 50); ?>" />
+                            <p class="description">
+                                <?php _e('Cantidad de Flores Coins otorgados cuando un cliente escribe una reseña de producto.', 'floresinc-rp'); ?>
+                            </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Puntos por cumpleaños', 'floresinc-rp'); ?>
+                            <?php _e('Flores Coins por cumpleaños', 'floresinc-rp'); ?>
                         </th>
                         <td>
                             <input type="number" name="floresinc_rp_settings[points_birthday]" min="0" 
                                 value="<?php echo esc_attr($options['points_birthday'] ?? 200); ?>" />
+                            <p class="description">
+                                <?php _e('Cantidad de Flores Coins otorgados automáticamente a un cliente en su fecha de cumpleaños.', 'floresinc-rp'); ?>
+                            </p>
                         </td>
                     </tr>
                 </table>
@@ -228,7 +238,7 @@
             
             <!-- Sección de Referidos -->
             <div id="referral-settings" class="tab-content">
-                <h2><?php _e('Configuración de Referidos', 'floresinc-rp'); ?></h2>
+                <h2><?php _e('Configuración del Programa de Referidos', 'floresinc-rp'); ?></h2>
                 
                 <table class="form-table">
                     <tr valign="top">
@@ -239,7 +249,7 @@
                             <input type="number" name="floresinc_rp_settings[referral_commission_first]" step="0.01" min="0" max="100" 
                                 value="<?php echo esc_attr($options['referral_commission_first'] ?? 10); ?>" />%
                             <p class="description">
-                                <?php _e('Porcentaje de comisión otorgada al referidor por la primera compra del referido.', 'floresinc-rp'); ?>
+                                <?php _e('Porcentaje del valor de la compra que se convierte en Flores Coins para el referidor cuando el referido realiza su primera compra.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
@@ -252,7 +262,7 @@
                             <input type="number" name="floresinc_rp_settings[referral_commission_subsequent]" step="0.01" min="0" max="100" 
                                 value="<?php echo esc_attr($options['referral_commission_subsequent'] ?? 5); ?>" />%
                             <p class="description">
-                                <?php _e('Porcentaje de comisión otorgada al referidor por las compras posteriores del referido.', 'floresinc-rp'); ?>
+                                <?php _e('Porcentaje del valor de la compra que se convierte en Flores Coins para el referidor cuando el referido realiza compras posteriores a la primera.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
@@ -265,7 +275,7 @@
                             <input type="number" name="floresinc_rp_settings[referral_commission_duration]" min="0" 
                                 value="<?php echo esc_attr($options['referral_commission_duration'] ?? 365); ?>" />
                             <p class="description">
-                                <?php _e('Número de días durante los cuales un referidor recibe comisiones por compras del referido (0 = sin límite).', 'floresinc-rp'); ?>
+                                <?php _e('Número de días durante los cuales un referidor recibe Flores Coins por las compras que realiza su referido (0 = sin límite de tiempo).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
@@ -278,7 +288,7 @@
                             <input type="checkbox" name="floresinc_rp_settings[enable_second_level]" value="1" 
                                 <?php checked(1, $options['enable_second_level'] ?? 0); ?> />
                             <p class="description">
-                                <?php _e('Permitir comisiones por referidos de segundo nivel (los referidos de tus referidos).', 'floresinc-rp'); ?>
+                                <?php _e('Permitir ganar Flores Coins por referidos de segundo nivel (cuando los usuarios que has referido traen a otros usuarios).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
@@ -291,20 +301,33 @@
                             <input type="number" name="floresinc_rp_settings[second_level_commission]" step="0.01" min="0" max="100" 
                                 value="<?php echo esc_attr($options['second_level_commission'] ?? 2); ?>" />%
                             <p class="description">
-                                <?php _e('Porcentaje de comisión otorgada por compras de referidos de segundo nivel.', 'floresinc-rp'); ?>
+                                <?php _e('Porcentaje del valor de la compra que se convierte en Flores Coins cuando los referidos de tus referidos realizan compras.', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>
                     
                     <tr valign="top">
                         <th scope="row">
-                            <?php _e('Puntos por referido', 'floresinc-rp'); ?>
+                            <?php _e('Flores Coins por referido de primer nivel', 'floresinc-rp'); ?>
                         </th>
                         <td>
-                            <input type="number" name="floresinc_rp_settings[points_per_referral]" min="0" 
-                                value="<?php echo esc_attr($options['points_per_referral'] ?? 100); ?>" />
+                            <input type="number" name="floresinc_rp_settings[signup_points_level1]" min="0" 
+                                value="<?php echo esc_attr($options['signup_points_level1'] ?? 100); ?>" />
                             <p class="description">
-                                <?php _e('Puntos otorgados por cada nuevo usuario referido (independiente de compras).', 'floresinc-rp'); ?>
+                                <?php _e('Cantidad de Flores Coins otorgados por cada nuevo usuario que se registra directamente usando tu código de referido (primer nivel).', 'floresinc-rp'); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr valign="top">
+                        <th scope="row">
+                            <?php _e('Flores Coins por referido de segundo nivel', 'floresinc-rp'); ?>
+                        </th>
+                        <td>
+                            <input type="number" name="floresinc_rp_settings[signup_points_level2]" min="0" 
+                                value="<?php echo esc_attr($options['signup_points_level2'] ?? 50); ?>" />
+                            <p class="description">
+                                <?php _e('Cantidad de Flores Coins otorgados por cada nuevo usuario que se registra usando el código de uno de tus referidos (segundo nivel).', 'floresinc-rp'); ?>
                             </p>
                         </td>
                     </tr>

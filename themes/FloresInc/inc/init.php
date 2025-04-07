@@ -65,6 +65,8 @@ add_action('rest_api_init', function() {
 $required_files = array(
     'cors-functions.php',
     'woocommerce-functions.php',
+    'woocommerce-orders-customization.php', // Nueva implementación para la tabla de pedidos
+    'woocommerce-order-details.php', // Personalizaciones de la página de detalles del pedido
     'featured-categories-functions.php',
     'banner-functions.php',
     'hiperofertas-functions.php',

@@ -96,11 +96,11 @@ function floresinc_rp_get_user_points($user_id) {
         ];
     }
     
-    // Calcular total ganado
+    // Calcular total ganado (incluir todas las transacciones positivas)
     $transactions_table = $wpdb->prefix . 'floresinc_points_transactions';
     $total_earned = $wpdb->get_var($wpdb->prepare("
         SELECT SUM(points) FROM $transactions_table 
-        WHERE user_id = %d AND type = 'earned'
+        WHERE user_id = %d AND points > 0 AND type NOT IN ('used', 'expired', 'transferred_out')
     ", $user_id));
     
     return [
