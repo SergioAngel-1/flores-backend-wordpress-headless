@@ -247,7 +247,7 @@ function floresinc_rp_account_points_content() {
     $transactions = floresinc_rp_get_user_transactions($user_id, 10);
     $referrals = floresinc_rp_get_user_referrals($user_id);
     $referral_code = floresinc_rp_get_user_referral_code($user_id);
-    $referral_url = floresinc_rp_get_referral_url($user_id);
+    // La URL de referido ahora se maneja en el frontend
     
     // Convertir a valor monetario
     $options = FloresInc_RP()->get_options();
@@ -296,7 +296,7 @@ function floresinc_rp_account_points_content() {
             <div class="referral-link">
                 <div class="link-label"><?php _e('Tu enlace de referido:', 'floresinc-rp'); ?></div>
                 <div class="link-value">
-                    <input type="text" readonly value="<?php echo esc_url($referral_url); ?>" 
+                    <input type="text" readonly value="<?php echo esc_url(add_query_arg('ref', $referral_code, home_url())); ?>" 
                            onClick="this.select();" style="width: 100%;">
                 </div>
                 <button class="copy-button" onclick="copyToClipboard(this)">

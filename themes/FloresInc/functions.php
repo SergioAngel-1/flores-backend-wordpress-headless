@@ -178,14 +178,22 @@ add_filter('manage_users_columns', 'add_pending_status_column');
 function show_pending_status_column_content($value, $column_name, $user_id) {
     if ($column_name === 'pending_status') {
         $pending = get_user_meta($user_id, 'pending_approval', true);
+        $rejected = get_user_meta($user_id, 'rejected_status', true);
         
-        if ($pending && current_user_can('edit_users')) {
+        if ($rejected) {
+            return '<span style="color:orange; display:block;">Rechazado</span>';
+        } else if ($pending && current_user_can('edit_users')) {
             $approve_link = admin_url("users.php?action=approve&user_id={$user_id}");
             $approve_nonce = wp_create_nonce("approve-user_{$user_id}");
             
+            $reject_link = admin_url("users.php?action=reject&user_id={$user_id}");
+            $reject_nonce = wp_create_nonce("reject-user_{$user_id}");
+            
             return '<span style="color:red; display:block; margin-bottom:5px;">Pendiente</span>' .
                    '<a href="' . $approve_link . '&_wpnonce=' . $approve_nonce . '" ' .
-                   'class="button button-primary" style="display:inline-block;">Aprobar</a>';
+                   'class="button button-primary" style="display:inline-block; margin-right:5px;">Aprobar</a>' .
+                   '<a href="' . $reject_link . '&_wpnonce=' . $reject_nonce . '" ' .
+                   'class="button button-secondary" style="display:inline-block; background-color:#dc3545; color:white; border-color:#dc3545;">Rechazar</a>';
         } else if ($pending) {
             return '<span style="color:red;">Pendiente</span>';
         } else {
@@ -208,11 +216,12 @@ function add_approve_user_button($actions, $user_object) {
     // Registrar información para depuración
     error_log("Usuario ID: {$user_object->ID}, Rol: {$role}, Pending: " . ($pending ? 'true' : 'false'));
     
-    // Mostrar el botón de aprobación si el usuario está pendiente
+    // Mostrar solo el botón de aprobación si el usuario está pendiente (el de rechazo solo en la columna Estado)
     if (current_user_can('edit_users') && $pending) {
+        // Botón de aprobar
         $approve_link = admin_url("users.php?action=approve&user_id={$user_object->ID}");
         $approve_nonce = wp_create_nonce("approve-user_{$user_object->ID}");
-        $actions['approve'] = "<a href='{$approve_link}&_wpnonce={$approve_nonce}' class='button button-primary' style='color: white; font-weight: bold; margin-right: 5px;'>Aprobar</a>";
+        $actions['approve'] = "<a href='{$approve_link}&_wpnonce={$approve_nonce}' class='button button-primary' style='color: white; font-weight: bold;'>Aprobar</a>";
         
         // Registrar que se añadió el botón
         error_log("Botón de aprobación añadido para usuario ID: {$user_object->ID}");
@@ -244,12 +253,32 @@ function process_user_approval() {
     
     // Verificar si el usuario está pendiente de aprobación
     if (get_user_meta($user_id, 'pending_approval', true)) {
+        // Verificar si el usuario fue previamente aprobado
+        $previously_approved = get_user_meta($user_id, '_user_previously_approved', true);
+        $is_rejected = get_user_meta($user_id, 'rejected_status', true);
+        
         // Marcar como aprobado
         delete_user_meta($user_id, 'pending_approval');
+        
+        // Si estaba rechazado, eliminar ese estado
+        if ($is_rejected) {
+            delete_user_meta($user_id, 'rejected_status');
+        }
         
         // Cambiar rol de usuario a customer
         $user = new WP_User($user_id);
         $user->set_role('customer');
+        
+        // Marcar como previamente aprobado (esto evitará volver a dar puntos)
+        if (!$previously_approved) {
+            update_user_meta($user_id, '_user_previously_approved', '1');
+            error_log("Primera aprobación para el usuario ID: {$user_id}");
+            
+            // Procesar puntos por referido SOLO si es la primera aprobación
+            do_action('floresinc_user_first_approval', $user_id);
+        } else {
+            error_log("El usuario ID: {$user_id} ya había sido aprobado previamente. No se asignan puntos.");
+        }
         
         // Notificar al usuario
         $user_data = get_userdata($user_id);
@@ -280,6 +309,101 @@ function process_user_approval() {
 add_action('admin_init', 'process_user_approval');
 
 /**
+ * Crear rol de usuario rechazado durante la activación del tema
+ */
+function floresinc_create_rejected_role() {
+    // Comprobar si el rol ya existe para evitar errores
+    if (!get_role('rejected')) {
+        // Crear un nuevo rol con capacidades mínimas
+        add_role(
+            'rejected',
+            'Rechazado',
+            array(
+                'read' => true, // Permitir solo lectura básica
+            )
+        );
+    }
+}
+// Registrar la función para que se ejecute en la activación del tema
+add_action('after_switch_theme', 'floresinc_create_rejected_role');
+
+// Asegurar que el rol exista al cargar el tema
+function floresinc_ensure_rejected_role() {
+    floresinc_create_rejected_role();
+    
+    // Registramos el tipo de rol para depuración
+    $rejected_role = get_role('rejected');
+    if ($rejected_role) {
+        error_log("Rol 'rejected' existe con capacidades: " . print_r($rejected_role->capabilities, true));
+    } else {
+        error_log("ERROR: El rol 'rejected' no existe aún después de intentar crearlo");
+    }
+}
+add_action('init', 'floresinc_ensure_rejected_role', 1); // Prioridad 1 para que se ejecute temprano
+
+/**
+ * Procesar el rechazo de usuario
+ */
+function process_user_rejection() {
+    if (!isset($_GET['action']) || $_GET['action'] !== 'reject') {
+        return;
+    }
+    
+    if (!isset($_GET['user_id']) || !is_numeric($_GET['user_id'])) {
+        return;
+    }
+    
+    $user_id = intval($_GET['user_id']);
+    
+    if (!current_user_can('edit_users')) {
+        wp_die(__('No tienes permisos para realizar esta acción.'));
+    }
+    
+    check_admin_referer("reject-user_{$user_id}");
+    
+    // Verificar si el usuario está pendiente de aprobación
+    if (get_user_meta($user_id, 'pending_approval', true)) {
+        // Obtener datos del usuario
+        $user_data = get_userdata($user_id);
+        
+        if ($user_data) {
+            $site_name = get_bloginfo('name');
+            
+            // Enviar correo de notificación de rechazo
+            $subject = "[$site_name] Tu solicitud de registro ha sido rechazada";
+            $message = "Hola {$user_data->display_name},\n\n";
+            $message .= "Lamentamos informarte que tu solicitud de registro en $site_name ha sido rechazada por un administrador.\n\n";
+            $message .= "Si crees que esto es un error, por favor contacta al soporte del sitio.\n\n";
+            $message .= "Saludos,\n";
+            $message .= "El equipo de $site_name";
+            
+            wp_mail($user_data->user_email, $subject, $message);
+            
+            // Cambiar el estado del usuario a rechazado
+            delete_user_meta($user_id, 'pending_approval');
+            update_user_meta($user_id, 'rejected_status', true);
+            
+            // No eliminamos el meta '_user_previously_approved' para saber si ya fue aprobado antes
+            // Esto asegura que no se den puntos por referidos si es aprobado después
+            
+            // Asignar rol de rechazado
+            $user = new WP_User($user_id);
+            $user->set_role('rejected');
+        }
+        
+        // Mensaje de éxito
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-warning is-dismissible"><p>Usuario marcado como rechazado correctamente.</p></div>';
+        });
+    }
+    
+    // Redireccionar de vuelta a la lista de usuarios
+    wp_redirect(admin_url('users.php'));
+    exit;
+}
+add_action('admin_init', 'process_user_rejection');
+
+/**
  * Bloquear el acceso a la administración para usuarios pendientes de aprobación
  */
 function block_pending_users_admin_access() {
@@ -298,4 +422,164 @@ function block_pending_users_admin_access() {
         exit;
     }
 }
+
+/**
+ * Añadir campo de selección de estado en el perfil de usuario
+ */
+function add_user_status_field($user) {
+    // Solo administradores pueden ver/editar este campo
+    if (!current_user_can('edit_users')) {
+        return;
+    }
+    
+    // No mostrar este campo para el usuario actual
+    if (get_current_user_id() === $user->ID) {
+        return;
+    }
+    
+    // Obtener el estado actual del usuario
+    $pending = get_user_meta($user->ID, 'pending_approval', true);
+    $rejected = get_user_meta($user->ID, 'rejected_status', true);
+    
+    // Determinar el estado actual
+    $current_status = 'approved'; // Por defecto
+    if ($pending) {
+        $current_status = 'pending';
+    } elseif ($rejected) {
+        $current_status = 'rejected';
+    }
+    
+    // Solo permitir cambios entre aprobado y rechazado (no pendiente)
+    if ($current_status !== 'pending') {
+        ?>
+        <h3>Estado del usuario</h3>
+        <table class="form-table">
+            <tr>
+                <th><label for="user_status">Estado</label></th>
+                <td>
+                    <select name="user_status" id="user_status">
+                        <option value="approved" <?php selected($current_status, 'approved'); ?>>Aprobado</option>
+                        <option value="rejected" <?php selected($current_status, 'rejected'); ?>>Rechazado</option>
+                    </select>
+                    <p class="description">Cambia el estado del usuario entre Aprobado y Rechazado.</p>
+                </td>
+            </tr>
+        </table>
+        <?php
+    } else {
+        // Para usuarios pendientes, mostrar un mensaje
+        ?>
+        <h3>Estado del usuario</h3>
+        <table class="form-table">
+            <tr>
+                <th>Estado</th>
+                <td>
+                    <p><strong style="color: red;">Pendiente de aprobación</strong></p>
+                    <p class="description">Este usuario está pendiente de aprobación. Utiliza los botones en la lista de usuarios para aprobar o rechazar.</p>
+                </td>
+            </tr>
+        </table>
+        <?php
+    }
+}
+add_action('edit_user_profile', 'add_user_status_field');
+
+/**
+ * Guardar el estado del usuario cuando se actualiza el perfil
+ */
+function save_user_status_field($user_id) {
+    // Verificar permisos
+    if (!current_user_can('edit_users')) {
+        return;
+    }
+    
+    // No permitir cambiar el estado del usuario actual
+    if (get_current_user_id() === $user_id) {
+        return;
+    }
+    
+    // Solo procesar si se ha enviado el campo de estado
+    if (isset($_POST['user_status'])) {
+        $new_status = sanitize_text_field($_POST['user_status']);
+        
+        // Registrar para depuración
+        error_log("Cambiando estado de usuario ID: {$user_id} a: {$new_status}");
+        
+        // Comprobar el estado pendiente actual
+        $pending = get_user_meta($user_id, 'pending_approval', true);
+        
+        // No permitir cambios de estado para usuarios pendientes desde aquí
+        if ($pending) {
+            error_log("Usuario pendiente, no se actualiza desde el perfil");
+            return;
+        }
+        
+        // Obtener datos del usuario antes de modificar
+        $user_before = get_userdata($user_id);
+        $role_before = $user_before->roles[0] ?? 'sin-rol';
+        error_log("Rol anterior: {$role_before}");
+        
+        // Verificar estado previo
+        $was_rejected = get_user_meta($user_id, 'rejected_status', true);
+        $previously_approved = get_user_meta($user_id, '_user_previously_approved', true);
+        
+        // Procesar el cambio de estado
+        if ($new_status === 'approved') {
+            // Cambiar a estado aprobado
+            delete_user_meta($user_id, 'rejected_status');
+            error_log("Meta 'rejected_status' eliminado para usuario ID: {$user_id}");
+            
+            // Actualizar rol
+            $user = new WP_User($user_id);
+            $user->set_role('customer');
+            error_log("Rol actualizado a 'customer' para usuario ID: {$user_id}");
+            
+            // Marcar como previamente aprobado si es la primera vez
+            if (!$previously_approved) {
+                update_user_meta($user_id, '_user_previously_approved', '1');
+                error_log("Usuario marcado como previamente aprobado ID: {$user_id}");
+            }
+            
+            // Mensaje de éxito
+            add_action('user_profile_update_errors', function($errors) use ($was_rejected) {
+                if ($was_rejected) {
+                    $errors->add('success', 'El usuario ha sido cambiado de Rechazado a Aprobado.', 'updated');
+                } else {
+                    $errors->add('success', 'El usuario ha sido aprobado correctamente.', 'updated');
+                }
+            });
+        } else if ($new_status === 'rejected') {
+            // Cambiar a estado rechazado
+            update_user_meta($user_id, 'rejected_status', true);
+            error_log("Meta 'rejected_status' establecido para usuario ID: {$user_id}");
+            
+            // Actualizar rol (asegurándose de que el rol existe)
+            if (!get_role('rejected')) {
+                floresinc_create_rejected_role();
+                error_log("Rol 'rejected' creado porque no existía");
+            }
+            
+            $user = new WP_User($user_id);
+            $user->set_role('rejected');
+            error_log("Rol actualizado a 'rejected' para usuario ID: {$user_id}");
+            
+            // Mensaje de éxito
+            add_action('user_profile_update_errors', function($errors) {
+                $errors->add('success', 'El usuario ha sido marcado como rechazado correctamente.', 'updated');
+            });
+        }
+        
+        // Verificar cambio de rol
+        $user_after = get_userdata($user_id);
+        $role_after = $user_after->roles[0] ?? 'sin-rol';
+        error_log("Rol después del cambio: {$role_after}");
+    }
+}
+// Registrar en ambos hooks para personal_options_update (perfil propio) y edit_user_profile_update (perfil de otro)
+add_action('personal_options_update', 'save_user_status_field');
+add_action('edit_user_profile_update', 'save_user_status_field');
+
+// Mostrar campo de estado también en perfil propio (aunque no se pueda editar)
+add_action('show_user_profile', 'add_user_status_field');
+
 add_action('init', 'block_pending_users_admin_access');

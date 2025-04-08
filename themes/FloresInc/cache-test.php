@@ -132,6 +132,7 @@ function get_cache_stats() {
 function check_content_type($type) {
     // Definimos manualmente los valores TTL conocidos basados en el código de API_Cache_Manager
     $ttl_values = [
+        // Tipos de contenido generales
         'product' => 3600,      // 1 hora
         'products' => 3600,     // 1 hora
         'category' => 7200,     // 2 horas
@@ -140,7 +141,19 @@ function check_content_type($type) {
         'catalog' => 86400,     // 24 horas
         'banner' => 86400,      // 24 horas
         'homeSection' => 3600,  // 1 hora
-        'menu' => 1800          // 30 minutos
+        'menu' => 1800,         // 30 minutos
+        
+        // Tipos específicos del sistema de referidos y Flores Coins
+        'points' => 300,        // 5 minutos
+        'transactions' => 300,   // 5 minutos
+        'referrals' => 3600,    // 1 hora
+        'earned' => 300,        // 5 minutos - tipo de transacción
+        'used' => 300,          // 5 minutos - tipo de transacción
+        'expired' => 3600,      // 1 hora - tipo de transacción
+        'admin_add' => 300,     // 5 minutos - tipo de transacción
+        'admin_deduct' => 300,  // 5 minutos - tipo de transacción
+        'referral' => 300,      // 5 minutos - tipo de transacción
+        'referral_signup' => 300 // 5 minutos - tipo de transacción
     ];
     
     return isset($ttl_values[$type]) ? $ttl_values[$type] : false;
@@ -178,7 +191,11 @@ if (isset($_POST['action'])) {
             '/floresinc/v1/menu',
             '/floresinc/v1/promotional-grid',
             '/wc/v3/products',
-            '/wc/v3/products/categories'
+            '/wc/v3/products/categories',
+            // Endpoints del sistema de referidos y Flores Coins
+            '/floresinc/v1/points',
+            '/floresinc/v1/points/transactions',
+            '/floresinc/v1/referrals'
         ];
         
         $clear_cache = isset($_POST['clear_cache']) && $_POST['clear_cache'] === 'yes';
@@ -204,8 +221,14 @@ $optimization_status = defined('DISABLE_API_OPTIMIZATION') && DISABLE_API_OPTIMI
 
 // Verificar tipos de contenido configurados
 $content_types = [
+    // Tipos de contenido generales
     'product', 'products', 'category', 'categories', 
-    'user', 'catalog', 'banner', 'homeSection', 'menu'
+    'user', 'catalog', 'banner', 'homeSection', 'menu',
+    
+    // Tipos específicos del sistema de referidos y Flores Coins
+    'points', 'transactions', 'referrals',
+    'earned', 'used', 'expired', 'admin_add', 'admin_deduct',
+    'referral', 'referral_signup'
 ];
 
 // HTML para la página

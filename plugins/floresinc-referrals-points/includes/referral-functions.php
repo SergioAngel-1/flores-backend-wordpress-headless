@@ -216,18 +216,6 @@ function floresinc_rp_get_user_referral_code($user_id) {
     return $code;
 }
 
-/**
- * Obtener URL de referido
- */
-function floresinc_rp_get_referral_url($user_id) {
-    $code = floresinc_rp_get_user_referral_code($user_id);
-    
-    if (!$code) {
-        return false;
-    }
-    
-    return add_query_arg('ref', $code, home_url());
-}
 
 /**
  * Obtener información de un referido por código
@@ -465,11 +453,14 @@ function floresinc_rp_referral_link_shortcode($atts) {
     }
     
     $user_id = get_current_user_id();
-    $referral_url = floresinc_rp_get_referral_url($user_id);
+    $referral_code = floresinc_rp_get_user_referral_code($user_id);
     
-    if (!$referral_url) {
+    if (!$referral_code) {
         return '';
     }
+    
+    // Construir la URL directamente
+    $referral_url = add_query_arg('ref', $referral_code, home_url());
     
     $atts = shortcode_atts([
         'text' => 'Mi enlace de referido'

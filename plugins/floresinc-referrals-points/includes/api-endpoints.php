@@ -252,11 +252,10 @@ function floresinc_rp_get_user_referral_stats_endpoint() {
 function floresinc_rp_get_user_referral_code_endpoint() {
     $user_id = get_current_user_id();
     $referral_code = floresinc_rp_get_user_referral_code($user_id);
-    $referral_url = floresinc_rp_get_referral_url($user_id);
     
+    // Ya no generamos la URL en el backend, esto se maneja en el frontend
     $response = [
-        'code' => $referral_code,
-        'url' => $referral_url
+        'code' => $referral_code
     ];
     
     return new WP_REST_Response($response, 200);

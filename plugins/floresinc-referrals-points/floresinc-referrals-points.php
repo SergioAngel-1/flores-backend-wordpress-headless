@@ -30,6 +30,8 @@ require_once FLORESINC_RP_DIR . 'includes/api-endpoints.php';
 require_once FLORESINC_RP_DIR . 'includes/woocommerce-integration.php';
 require_once FLORESINC_RP_DIR . 'includes/class-transactions-table.php';
 require_once FLORESINC_RP_DIR . 'includes/class-referrals-table.php';
+require_once FLORESINC_RP_DIR . 'includes/user-approval-integration.php';
+require_once FLORESINC_RP_DIR . 'includes/cache-management.php';
 
 // Registrar scripts y estilos
 add_action('admin_enqueue_scripts', 'floresinc_rp_admin_scripts');
