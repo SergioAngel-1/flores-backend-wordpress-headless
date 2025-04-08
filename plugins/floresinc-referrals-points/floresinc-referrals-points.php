@@ -21,17 +21,8 @@ define('FLORESINC_RP_DIR', plugin_dir_path(__FILE__));
 define('FLORESINC_RP_URL', plugin_dir_url(__FILE__));
 define('FLORESINC_RP_VERSION', '1.0.0');
 
-// Incluir archivos de funciones
-require_once FLORESINC_RP_DIR . 'includes/database.php';
-require_once FLORESINC_RP_DIR . 'includes/admin-functions.php';
-require_once FLORESINC_RP_DIR . 'includes/points-functions.php';
-require_once FLORESINC_RP_DIR . 'includes/referral-functions.php';
-require_once FLORESINC_RP_DIR . 'includes/api-endpoints.php';
-require_once FLORESINC_RP_DIR . 'includes/woocommerce-integration.php';
-require_once FLORESINC_RP_DIR . 'includes/class-transactions-table.php';
-require_once FLORESINC_RP_DIR . 'includes/class-referrals-table.php';
-require_once FLORESINC_RP_DIR . 'includes/user-approval-integration.php';
-require_once FLORESINC_RP_DIR . 'includes/cache-management.php';
+// Incluir archivo cargador principal
+require_once FLORESINC_RP_DIR . 'includes/loader.php';
 
 // Registrar scripts y estilos
 add_action('admin_enqueue_scripts', 'floresinc_rp_admin_scripts');

@@ -582,4 +582,26 @@ add_action('edit_user_profile_update', 'save_user_status_field');
 // Mostrar campo de estado también en perfil propio (aunque no se pueda editar)
 add_action('show_user_profile', 'add_user_status_field');
 
+/**
+ * Añadir acceso directo a cache-test.php en la barra de administración
+ */
+function floresinc_add_cache_test_link($wp_admin_bar) {
+    // Solo mostrar para administradores
+    if (!current_user_can('administrator')) {
+        return;
+    }
+    
+    $args = array(
+        'id'    => 'cache-test',
+        'title' => 'Prueba de Caché',
+        'href'  => site_url('/wp-content/themes/FloresInc/cache-test.php'),
+        'meta'  => array(
+            'class' => 'cache-test-link',
+            'title' => 'Acceder a la prueba de caché de API'
+        )
+    );
+    $wp_admin_bar->add_node($args);
+}
+add_action('admin_bar_menu', 'floresinc_add_cache_test_link', 999);
+
 add_action('init', 'block_pending_users_admin_access');
